@@ -22,9 +22,13 @@
 (defun run-live-region-tests ()
   "Run scrollback-safe live-region lifecycle regression tests."
   (let ((stream (make-string-output-stream))
-        (flushes 0))
+        (flushes 0)
+        (writes 0)
+        (last-write ""))
     (let* ((write-function
              (lambda (text)
+               (incf writes)
+               (setf last-write text)
                (write-string text stream)))
            (region
              (make-live-region
@@ -33,6 +37,15 @@
               :flush-function (lambda () (incf flushes))))
            (text (format nil "> abcdef~%x~%")))
       (live-region-present region text :cursor 5)
+      (check-equal "initial repaint uses one terminal write" 1 writes)
+      (check-equal "repaint hides the cursor before changing rows"
+                   (ansi-cursor-hide)
+                   (subseq last-write 0 (length (ansi-cursor-hide))))
+      (check-equal "repaint restores the cursor after changing rows"
+                   (ansi-cursor-show)
+                   (subseq last-write
+                           (- (length last-write)
+                              (length (ansi-cursor-show)))))
       (check-true "presented live region is visible"
                   (live-region-visible-p region))
       (check-equal "wrapped live region row count"
@@ -44,6 +57,11 @@
       (check-equal "wrapped live cursor column"
                    5
                    (live-region-cursor-column region))
+      (let ((previous-writes writes))
+        (live-region-present region text :cursor 6)
+        (check-equal "replacement repaint uses one terminal write"
+                     1
+                     (- writes previous-writes)))
       (live-region-append region (format nil "FINAL~%~%"))
       (let ((output (get-output-stream-string stream)))
         (check-equal "scrollback output is appended once"

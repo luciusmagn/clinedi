@@ -119,47 +119,81 @@
   (funcall (live-region--flush-function region))
   (values))
 
-(defun live-region--terminal-text (text)
-  "Return TEXT with explicit carriage returns after every newline."
-  (with-output-to-string (stream)
-    (write-display text :stream stream)))
-
-(defun live-region--write-newline (region)
-  "Advance REGION's terminal to column zero on a fresh row."
-  (live-region--write region (format nil "~c~c" #\linefeed #\return))
+(defun live-region--write-newline (stream)
+  "Advance STREAM's terminal to column zero on a fresh row."
+  (write-char #\linefeed stream)
+  (write-char #\return stream)
   (values))
 
-(defun live-region--paint (region)
-  "Paint REGION's retained presentation and restore its logical cursor."
-  (unless (live-region--presented-p region)
-    (return-from live-region--paint region))
-  (let* ((text    (live-region--text region))
-         (display (live-region--display region))
-         (columns (live-region-columns region))
-         (cursor  (live-region--cursor region)))
+(defun live-region--emit-update (region function)
+  "Emit one hidden-cursor terminal update composed by FUNCTION."
+  (let ((stream (make-string-output-stream)))
+    (write-string (ansi-cursor-hide) stream)
+    (funcall function stream)
+    (write-string (ansi-cursor-show) stream)
+    (live-region--write region (get-output-stream-string stream))
+    (live-region--flush region))
+  (values))
+
+(defun live-region--write-erasure (region stream)
+  "Write the commands retracting REGION's painted rows to STREAM."
+  (let ((total (live-region-row-count region)))
+    (write-string
+     (ansi-cursor-down
+      (- total 1 (live-region-cursor-row region)))
+     stream)
+    (loop for row downfrom (1- total) to 0
+          do (write-char #\return stream)
+             (write-string (ansi-clear-line-right) stream)
+             (when (plusp row)
+               (write-string (ansi-cursor-up 1) stream))))
+  (values))
+
+(defun live-region--presentation-geometry (region)
+  "Return retained end and cursor geometry for REGION."
+  (let ((text    (live-region--text region))
+        (columns (live-region-columns region))
+        (cursor  (live-region--cursor region)))
     (multiple-value-bind (cursor-row cursor-column cursor-wrap)
         (screen-position text :columns columns :end cursor)
       (declare (ignore cursor-wrap))
       (multiple-value-bind (end-row end-column pending-wrap)
           (screen-position text :columns columns)
         (declare (ignore end-column))
-        (live-region--write region (ansi-cursor-hide))
-        (unwind-protect
-             (progn
-               (live-region--write region
-                                   (live-region--terminal-text display))
-               (when pending-wrap
-                 (live-region--write-newline region))
-               (live-region--write region
-                                   (ansi-cursor-up (- end-row cursor-row)))
-               (live-region--write region
-                                   (ansi-cursor-column cursor-column)))
-          (live-region--write region (ansi-cursor-show)))
-        (setf (live-region-row-count region) (1+ end-row)
-              (live-region-cursor-row region) cursor-row
-              (live-region-cursor-column region) cursor-column
-              (live-region-visible-p region) t)
-        (live-region--flush region))))
+        (values end-row cursor-row cursor-column pending-wrap)))))
+
+(defun live-region--write-presentation
+    (region stream end-row cursor-row cursor-column pending-wrap)
+  "Write REGION's retained presentation and cursor placement to STREAM."
+  (write-display (live-region--display region) :stream stream)
+  (when pending-wrap
+    (live-region--write-newline stream))
+  (write-string (ansi-cursor-up (- end-row cursor-row)) stream)
+  (write-string (ansi-cursor-column cursor-column) stream)
+  (values))
+
+(defun live-region--record-presentation
+    (region end-row cursor-row cursor-column)
+  "Record REGION's painted END-ROW and cursor geometry."
+  (setf (live-region-row-count region) (1+ end-row)
+        (live-region-cursor-row region) cursor-row
+        (live-region-cursor-column region) cursor-column
+        (live-region-visible-p region) t)
+  region)
+
+(defun live-region--paint (region)
+  "Paint REGION's retained presentation and restore its logical cursor."
+  (unless (live-region--presented-p region)
+    (return-from live-region--paint region))
+  (multiple-value-bind (end-row cursor-row cursor-column pending-wrap)
+      (live-region--presentation-geometry region)
+    (live-region--emit-update
+     region
+     (lambda (stream)
+       (live-region--write-presentation
+        region stream end-row cursor-row cursor-column pending-wrap)))
+    (live-region--record-presentation
+     region end-row cursor-row cursor-column))
   region)
 
 
@@ -169,21 +203,14 @@
   "Retract REGION without forgetting the presentation that should resume."
   (check-type region live-region)
   (when (live-region-visible-p region)
-    (let ((total (live-region-row-count region)))
-      (live-region--write
-       region
-       (ansi-cursor-down
-        (- total 1 (live-region-cursor-row region))))
-      (loop for row downfrom (1- total) to 0
-            do (live-region--write region (string #\return))
-               (live-region--write region (ansi-clear-line-right))
-               (when (plusp row)
-                 (live-region--write region (ansi-cursor-up 1))))
-      (setf (live-region-visible-p region) nil
-            (live-region-row-count region) 0
-            (live-region-cursor-row region) 0
-            (live-region-cursor-column region) 0)
-      (live-region--flush region)))
+    (live-region--emit-update
+     region
+     (lambda (stream)
+       (live-region--write-erasure region stream)))
+    (setf (live-region-visible-p region) nil
+          (live-region-row-count region) 0
+          (live-region-cursor-row region) 0
+          (live-region-cursor-column region) 0))
   region)
 
 (defun live-region-resume (region)
@@ -223,12 +250,21 @@ content. CURSOR is normalized to a complete grapheme boundary within TEXT."
           (grapheme-boundary-at-or-after
            text
            (min (length text) (max 0 cursor)))))
-    (live-region-suspend region)
     (setf (live-region--text region) (copy-seq text)
           (live-region--display region) (copy-seq display)
           (live-region--cursor region) safe-cursor
           (live-region--presented-p region) t)
-    (live-region--paint region)))
+    (multiple-value-bind (end-row cursor-row cursor-column pending-wrap)
+        (live-region--presentation-geometry region)
+      (live-region--emit-update
+       region
+       (lambda (stream)
+         (when (live-region-visible-p region)
+           (live-region--write-erasure region stream))
+         (live-region--write-presentation
+          region stream end-row cursor-row cursor-column pending-wrap)))
+      (live-region--record-presentation
+       region end-row cursor-row cursor-column))))
 
 (defun live-region-append (region text &key (display text))
   "Append TEXT to ordinary scrollback and repaint REGION beneath it.
@@ -242,9 +278,13 @@ last output row."
     (call-with-live-region-suspended
      region
      (lambda ()
-       (live-region--write region (live-region--terminal-text display))
+       (live-region--write
+        region
+        (with-output-to-string (stream)
+          (write-display display :stream stream)))
        (unless (char= (char text (1- (length text))) #\newline)
-         (live-region--write-newline region))
+         (live-region--write region (format nil "~c~c"
+                                            #\linefeed #\return)))
        (live-region--flush region))))
   region)
 
