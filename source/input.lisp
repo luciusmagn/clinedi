@@ -46,6 +46,10 @@
         ((member body '("1~" "7~") :test #'string=) :home)
         ((string= body "3~") :delete)
         ((member body '("4~" "8~") :test #'string=) :end)
+        ((member body '("13;2u" "13;3u" "13;4u"
+                        "27;2;13~" "27;3;13~" "27;4;13~")
+                 :test #'string=)
+         :insert-newline)
         ((string= body "200~")
          (list :paste (input--read-bracketed-paste stream)))
         (t :ignore)))
@@ -79,6 +83,7 @@
          (#\H :home)
          (#\F :end)
          (t :ignore)))
+      ((#\newline #\return) :insert-newline)
       (t :escape))))
 
 (defun read-event (&key (stream *standard-input*) (escape-delay 0.002))
@@ -86,8 +91,9 @@
 
 Printable input becomes (:INSERT text). Control and escape sequences become
 editing keywords. Bracketed paste becomes one (:PASTE text) event, with terminal
-controls sanitized before the text reaches an editor. Ctrl-D becomes
-:END-OF-INPUT; physical stream EOF becomes :STREAM-END."
+controls sanitized before the text reaches an editor. Modified Enter becomes
+:INSERT-NEWLINE when distinguishable from Enter. Ctrl-D becomes :END-OF-INPUT;
+physical stream EOF becomes :STREAM-END."
   (let ((character (read-char stream nil nil)))
     (cond ((null character)
            :stream-end)

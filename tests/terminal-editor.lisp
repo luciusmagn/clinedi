@@ -47,6 +47,16 @@
     (check-equal "raw editor restores terminal" 1 restores))
   (multiple-value-bind (line kind output restores)
       (terminal-editor-test--read
+       (format nil "first~c~csecond~%" (code-char 27) #\return)
+       :raw-mode-function (lambda () t)
+       :bracketed-paste-p nil)
+    (declare (ignore output restores))
+    (check-equal "modified enter inserts a logical line"
+                 (format nil "first~%second")
+                 line)
+    (check-equal "multiline input still submits with enter" :line kind))
+  (multiple-value-bind (line kind output restores)
+      (terminal-editor-test--read
        "partial"
        :raw-mode-function (lambda () t)
        :bracketed-paste-p nil)

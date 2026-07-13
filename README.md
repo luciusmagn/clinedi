@@ -46,12 +46,17 @@ action plus an optional payload. This API is suitable for event-driven terminal
 UIs that own their repaint loop. `:end-of-input` represents Ctrl-D and follows
 the usual delete-or-EOF behavior. `:stream-end` represents physical stream EOF;
 handling it returns the `:end-of-input` action without clearing partial text.
+`:insert-newline` adds an explicit newline without submitting the editor.
 
 ## Blocking frontend
 
 `clinedi:edit-line` owns key decoding and repainting while delegating terminal
 raw mode, terminal size, completion, highlighting and suggestions to callbacks.
 This keeps terminal policy and application semantics outside the library.
+
+Enter submits input. Alt-Enter inserts a newline on terminals that encode Alt
+as an Escape prefix. Shift-Enter and Alt-Enter also work when the terminal emits
+CSI-u or modifyOtherKeys sequences for modified Enter.
 
 ## Tests
 

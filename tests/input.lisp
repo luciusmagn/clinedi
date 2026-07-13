@@ -31,6 +31,20 @@
   (check-equal "delete event"
                :delete
                (input-test--event (input-test--escape-sequence "[3~")))
+  (check-equal "legacy alt-enter event"
+               :insert-newline
+               (input-test--event
+                (concatenate 'string
+                             (string (code-char 27))
+                             (string #\return))))
+  (check-equal "CSI-u shift-enter event"
+               :insert-newline
+               (input-test--event
+                (input-test--escape-sequence "[13;2u")))
+  (check-equal "modify-other-keys alt-enter event"
+               :insert-newline
+               (input-test--event
+                (input-test--escape-sequence "[27;3;13~")))
   (check-equal "lone escape event"
                :escape
                (input-test--event (string (code-char 27))))
