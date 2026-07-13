@@ -56,7 +56,9 @@ This keeps terminal policy and application semantics outside the library.
 
 Enter submits input. Alt-Enter inserts a newline on terminals that encode Alt
 as an Escape prefix. Shift-Enter and Alt-Enter also work when the terminal emits
-CSI-u or modifyOtherKeys sequences for modified Enter.
+CSI-u or modifyOtherKeys sequences for modified Enter. Ctrl-Backspace and
+Ctrl-W delete the whitespace and word before the cursor; Ctrl-Backspace works
+with its raw control byte and its CSI-u or modifyOtherKeys encodings.
 
 ## Live application region
 

@@ -25,6 +25,9 @@
   (check-equal "control-left event"
                :left
                (input-test--event (string (code-char 2))))
+  (check-equal "raw control-backspace event"
+               :kill-word
+               (input-test--event (string (code-char 8))))
   (check-equal "arrow-up event"
                :history-previous
                (input-test--event (input-test--escape-sequence "[A")))
@@ -45,6 +48,14 @@
                :insert-newline
                (input-test--event
                 (input-test--escape-sequence "[27;3;13~")))
+  (dolist (case '(("CSI-u control-backspace with BS" "[8;5u")
+                  ("CSI-u control-backspace with DEL" "[127;5u")
+                  ("modify-other-keys control-backspace with BS" "[27;5;8~")
+                  ("modify-other-keys control-backspace with DEL" "[27;5;127~")))
+    (check-equal (first case)
+                 :kill-word
+                 (input-test--event
+                  (input-test--escape-sequence (second case)))))
   (check-equal "lone escape event"
                :escape
                (input-test--event (string (code-char 27))))

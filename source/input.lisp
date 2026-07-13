@@ -50,6 +50,10 @@
                         "27;2;13~" "27;3;13~" "27;4;13~")
                  :test #'string=)
          :insert-newline)
+        ((member body '("8;5u" "127;5u"
+                        "27;5;8~" "27;5;127~")
+                 :test #'string=)
+         :kill-word)
         ((string= body "200~")
          (list :paste (input--read-bracketed-paste stream)))
         (t :ignore)))
@@ -92,8 +96,9 @@
 Printable input becomes (:INSERT text). Control and escape sequences become
 editing keywords. Bracketed paste becomes one (:PASTE text) event, with terminal
 controls sanitized before the text reaches an editor. Modified Enter becomes
-:INSERT-NEWLINE when distinguishable from Enter. Ctrl-D becomes :END-OF-INPUT;
-physical stream EOF becomes :STREAM-END."
+:INSERT-NEWLINE when distinguishable from Enter. Ctrl-Backspace and Ctrl-W
+become :KILL-WORD. Ctrl-D becomes :END-OF-INPUT; physical stream EOF becomes
+:STREAM-END."
   (let ((character (read-char stream nil nil)))
     (cond ((null character)
            :stream-end)
@@ -107,7 +112,7 @@ physical stream EOF becomes :STREAM-END."
              (4 :end-of-input)         ; C-d
              (5 :end)                  ; C-e
              (6 :right)                ; C-f
-             (8 :backspace)            ; C-h
+             (8 :kill-word)            ; C-Backspace or C-h
              (9 :complete)             ; Tab
              ((10 13) :submit)
              (11 :kill-to-end)         ; C-k
