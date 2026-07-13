@@ -68,16 +68,26 @@
     (declare (ignore output restores))
     (check-equal "completion callback replacement" "print " line)
     (check-equal "completion callback submit kind" :line kind))
-  (multiple-value-bind (line kind output restores)
-      (terminal-editor-test--read
-       (format nil "a~c[C~%" (code-char 27))
-       :raw-mode-function (lambda () t)
-       :bracketed-paste-p nil
-       :suggestion-function
-       (lambda (text history)
-         (declare (ignore history))
-         (and (string= text "a") "abc")))
-    (declare (ignore output restores))
-    (check-equal "right accepts suggestion" "abc" line)
-    (check-equal "suggestion submit kind" :line kind))
+  (let ((source-history (vector "older"))
+        (callback-histories nil))
+    (multiple-value-bind (line kind output restores)
+        (terminal-editor-test--read
+         (format nil "a~c[C~%" (code-char 27))
+         :history source-history
+         :raw-mode-function (lambda () t)
+         :bracketed-paste-p nil
+         :suggestion-function
+         (lambda (text history)
+           (push history callback-histories)
+           (and (string= text "a") "abc")))
+      (declare (ignore output restores))
+      (check-equal "right accepts suggestion" "abc" line)
+      (check-equal "suggestion submit kind" :line kind))
+    (check-true "suggestion callback reuses editor-owned history"
+                (and callback-histories
+                     (every (lambda (history)
+                              (eq history (first callback-histories)))
+                            callback-histories)))
+    (check-true "suggestion callback cannot mutate caller history"
+                (not (eq source-history (first callback-histories)))))
   (values))

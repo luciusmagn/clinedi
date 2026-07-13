@@ -40,7 +40,11 @@
                 (length (line-editor-text editor))))
     (let* ((text (line-editor-text editor))
            (suggestion
-             (funcall suggestion-function text (line-editor-history editor))))
+             ;; The editor already owns this copied history vector. Passing it
+             ;; directly avoids duplicating every entry on each keystroke.
+             (funcall suggestion-function
+                      text
+                      (slot-value editor 'history))))
       (when (and (stringp suggestion)
                  (> (length suggestion) (length text))
                  (string= text suggestion :end2 (length text)))
