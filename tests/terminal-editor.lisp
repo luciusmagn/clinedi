@@ -78,6 +78,63 @@
     (declare (ignore output restores))
     (check-equal "completion callback replacement" "print " line)
     (check-equal "completion callback submit kind" :line kind))
+  (flet ((complete (text cursor)
+           (declare (ignore text))
+           (values (- cursor 3)
+                   '("print" "printf" "private")
+                   '("PRINT" "PRINTF" "PRIVATE")))
+
+         (accept (candidate)
+           (concatenate 'string candidate " ")))
+    (multiple-value-bind (line kind output restores)
+        (terminal-editor-test--read
+         (format nil "pri~c~c!~%" #\tab #\tab)
+         :raw-mode-function (lambda () t)
+         :bracketed-paste-p nil
+         :completion-function #'complete
+         :completion-accept-function #'accept)
+      (declare (ignore restores))
+      (check-equal "Tab cycles live completion candidates"
+                   "printf !"
+                   line)
+      (check-equal "typed input submits after retaining selection" :line kind)
+      (check-true "live completion renders supplied labels"
+                  (search "PRINTF" output)))
+    (multiple-value-bind (line kind output restores)
+        (terminal-editor-test--read
+         (format nil "pri~c~c[C~%" #\tab (code-char 27))
+         :raw-mode-function (lambda () t)
+         :bracketed-paste-p nil
+         :completion-function #'complete
+         :completion-accept-function #'accept)
+      (declare (ignore output restores))
+      (check-equal "right arrow navigates completion grid" "printf " line)
+      (check-equal "Enter submits the selected grid completion" :line kind))
+    (multiple-value-bind (line kind output restores)
+        (terminal-editor-test--read
+         (format nil "pri~c~c[C~%" #\tab (code-char 27))
+         :raw-mode-function (lambda () t)
+         :bracketed-paste-p nil
+         :completion-function #'complete
+         :completion-accept-function #'accept
+         :completion-arrangement :vertical)
+      (declare (ignore output restores))
+      (check-equal "vertical completion ignores horizontal navigation"
+                   "print "
+                   line)
+      (check-equal "vertical completion submits selected candidate"
+                   :line
+                   kind))
+    (multiple-value-bind (line kind output restores)
+        (terminal-editor-test--read
+         (format nil "pri~c~cX~%" #\tab (code-char 27))
+         :raw-mode-function (lambda () t)
+         :bracketed-paste-p nil
+         :completion-function #'complete
+         :completion-accept-function #'accept)
+      (declare (ignore output restores))
+      (check-equal "Escape restores text preceding completion" "pri" line)
+      (check-equal "restored completion text remains submittable" :line kind)))
   (let ((source-history (vector "older"))
         (callback-histories nil))
     (multiple-value-bind (line kind output restores)

@@ -103,6 +103,20 @@
                        (string= show rendered
                                 :start2 (- (length rendered)
                                            (length show)))))))
+  (let ((rendered
+          (with-output-to-string (stream)
+            (render-line "pri"
+                         :cursor 3
+                         :prompt-width 2
+                         :columns 20
+                         :previous-row 0
+                         :footer-text "  print  printf"
+                         :footer-display "  print  printf"
+                         :stream stream))))
+    (check-true "rendered footer follows editor text"
+                (search "print  printf" rendered))
+    (check-true "footer redraw returns to editor cursor"
+                (search (ansi-cursor-up 1) rendered)))
   (let ((*presentation-enabled* nil))
     (check-equal "disabled presentation leaves text plain"
                  "plain"

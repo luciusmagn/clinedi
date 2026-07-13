@@ -186,6 +186,8 @@ are extended-grapheme boundaries."
                               (columns 80)
                               (previous-row 0)
                               suggestion
+                              footer-text
+                              footer-display
                               (highlight-function #'identity)
                               (stream *standard-output*))
   "Redraw dynamic line-editor TEXT and return the cursor's resulting row.
@@ -193,9 +195,17 @@ are extended-grapheme boundaries."
 The static prompt is described by PROMPT-WIDTH but is not repainted. CURSOR is
 a character index. PREVIOUS-ROW is the row where the prior redraw left it.
 SUGGESTION is unaccepted suffix text rendered after TEXT. HIGHLIGHT-FUNCTION
-may add ANSI styling, but must preserve the visible content of TEXT."
+may add ANSI styling, but must preserve the visible content of TEXT.
+FOOTER-TEXT and FOOTER-DISPLAY describe optional plain geometry and trusted
+ANSI presentation below the editor. Their visible contents must match."
   (let* ((suffix (or suggestion ""))
-         (display (concatenate 'string text suffix)))
+         (footer (or footer-text ""))
+         (footer-p (plusp (length footer)))
+         (display (concatenate 'string
+                               text
+                               suffix
+                               (if footer-p (string #\newline) "")
+                               footer)))
     (multiple-value-bind (prompt-row prompt-column prompt-wrap)
         (screen-position "" :prompt-width prompt-width :columns columns)
       (declare (ignore prompt-wrap))
@@ -218,6 +228,10 @@ may add ANSI styling, but must preserve the visible content of TEXT."
                                 :stream stream)
                  (when (plusp (length suffix))
                    (write-display (ansi-colorize suffix :bright-black)
+                                  :stream stream))
+                 (when footer-p
+                   (render--write-newline stream)
+                   (write-display (or footer-display footer)
                                   :stream stream))
                  (when exact-wrap
                    (render--write-newline stream))

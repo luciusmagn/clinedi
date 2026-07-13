@@ -16,6 +16,7 @@
                 #:ansi-colorize
                 #:ansi-cursor-hide
                 #:ansi-cursor-show
+                #:ansi-cursor-up
                 #:ansi-strip
                 #:ansi-display-width
                 #:make-line-editor

@@ -33,6 +33,212 @@
                   (subseq text end))
      :cursor (+ start (length replacement)))))
 
+(defclass terminal-completion-candidate ()
+  ((value
+    :initarg :value
+    :reader terminal-completion-candidate-value
+    :documentation "Opaque value passed to the completion acceptance callback.")
+   (display
+    :initarg :display
+    :reader terminal-completion-candidate-display
+    :type string
+    :documentation "Sanitized single-line candidate label."))
+  (:documentation "One blocking-editor completion candidate and its label."))
+
+(defclass terminal-completion-session ()
+  ((selector
+    :initarg :selector
+    :reader terminal-completion-session-selector
+    :type selector
+    :documentation "Navigation and viewport state for this completion session.")
+   (original-text
+    :initarg :original-text
+    :reader terminal-completion-session-original-text
+    :type string
+    :documentation "Editor text before candidate preview began.")
+   (replacement-start
+    :initarg :replacement-start
+    :reader terminal-completion-session-replacement-start
+    :type integer
+    :documentation "First character index replaced by a candidate.")
+   (replacement-end
+    :initarg :replacement-end
+    :reader terminal-completion-session-replacement-end
+    :type integer
+    :documentation "Original cursor and exclusive replacement end index.")
+   (accept-function
+    :initarg :accept-function
+    :reader terminal-completion-session-accept-function
+    :type function
+    :documentation "Function converting a candidate value to replacement text."))
+  (:documentation
+   "Transient completion selection for the blocking line editor."))
+
+(defun terminal-completion--candidates (candidates displays)
+  "Return internal completion candidates for CANDIDATES and DISPLAYS."
+  (let ((remaining-displays (and displays (coerce displays 'list))))
+    (loop for candidate in candidates
+          for raw-display = (if remaining-displays
+                                (pop remaining-displays)
+                                candidate)
+          for display = (sanitize-text
+                         (if (stringp raw-display)
+                             raw-display
+                             (princ-to-string raw-display))
+                         :single-line-p t)
+          collect (make-instance 'terminal-completion-candidate
+                                 :value candidate
+                                 :display display))))
+
+(defun terminal-completion--make-session
+    (editor start end candidates displays accept-function arrangement)
+  "Create a completion session for EDITOR and preview its first candidate."
+  (let* ((items (terminal-completion--candidates candidates displays))
+         (selector (make-selector :items items
+                                  :visible-count (max 1 (length items))
+                                  :arrangement arrangement))
+         (session
+           (make-instance
+            'terminal-completion-session
+            :selector selector
+            :original-text (copy-seq (line-editor-text editor))
+            :replacement-start start
+            :replacement-end end
+            :accept-function accept-function)))
+    (terminal-completion--preview
+     editor session (selector-selected-item selector))
+    session))
+
+(defun terminal-completion--preview (editor session candidate)
+  "Preview CANDIDATE in EDITOR using SESSION's original replacement range."
+  (when candidate
+    (let* ((text (terminal-completion-session-original-text session))
+           (start (terminal-completion-session-replacement-start session))
+           (end (terminal-completion-session-replacement-end session))
+           (replacement
+             (funcall (terminal-completion-session-accept-function session)
+                      (terminal-completion-candidate-value candidate))))
+      (check-type replacement string)
+      (line-editor-set-text
+       editor
+       (concatenate 'string
+                    (subseq text 0 start)
+                    replacement
+                    (subseq text end))
+       :cursor (+ start (length replacement)))))
+  editor)
+
+(defun terminal-completion--restore (editor session)
+  "Restore EDITOR to the state preceding SESSION and return EDITOR."
+  (line-editor-set-text
+   editor
+   (terminal-completion-session-original-text session)
+   :cursor (terminal-completion-session-replacement-end session)))
+
+(defun terminal-completion--candidate-width (candidate columns)
+  "Return CANDIDATE's selection-cell width capped at COLUMNS."
+  (min columns
+       (+ 2 (text-cell-width
+             (terminal-completion-candidate-display candidate)))))
+
+(defun terminal-completion--cell-strings
+    (candidate selected-p width)
+  "Return plain and presented WIDTH-cell strings for CANDIDATE."
+  (let* ((label-width (max 0 (- width 2)))
+         (label (text-cell-prefix
+                 (terminal-completion-candidate-display candidate)
+                 label-width))
+         (content (concatenate 'string
+                               (if selected-p "▸ " "  ")
+                               label))
+         (padding (make-string
+                   (max 0 (- width (text-cell-width content)))
+                   :initial-element #\space))
+         (plain (concatenate 'string content padding))
+         (presented (concatenate 'string
+                                 (if selected-p
+                                     (ansi-reverse-video content)
+                                     content)
+                                 padding)))
+    (values plain presented)))
+
+(defun terminal-completion--arrange (session columns row-budget)
+  "Arrange SESSION within COLUMNS and ROW-BUDGET and return rows and widths."
+  (let ((selector (terminal-completion-session-selector session))
+        (layout-columns (max 1 (1- columns))))
+    (labels ((arrange ()
+               (selector-arrange
+                selector layout-columns
+                :width-function
+                (lambda (candidate)
+                  (terminal-completion--candidate-width
+                   candidate layout-columns)))))
+      (multiple-value-bind (index-rows column-widths)
+          (arrange)
+        (when (> (length index-rows) row-budget)
+          (setf (slot-value selector 'visible-count)
+                (max 1 (* row-budget
+                          (selector-column-count selector))))
+          (multiple-value-setq (index-rows column-widths) (arrange)))
+        (values index-rows column-widths)))))
+
+(defun terminal-completion--footer (session columns row-budget)
+  "Return plain and presented selector footer strings for SESSION."
+  (let ((selector (terminal-completion-session-selector session)))
+    (multiple-value-bind (index-rows column-widths)
+        (terminal-completion--arrange session columns row-budget)
+      (let ((plain (make-string-output-stream))
+            (presented (make-string-output-stream)))
+        (loop for index-row in index-rows
+              for row-index from 0
+              do (when (plusp row-index)
+                   (write-char #\newline plain)
+                   (write-char #\newline presented))
+                 (loop for item-index in index-row
+                       for column-index from 0
+                       for candidate = (nth item-index
+                                            (selector-items selector))
+                       for width = (nth column-index column-widths)
+                       do (when (plusp column-index)
+                            (write-string "  " plain)
+                            (write-string "  " presented))
+                          (multiple-value-bind (plain-cell presented-cell)
+                              (terminal-completion--cell-strings
+                               candidate
+                               (= item-index (selector-selection selector))
+                               width)
+                            (write-string plain-cell plain)
+                            (write-string presented-cell presented))))
+        (values (get-output-stream-string plain)
+                (get-output-stream-string presented))))))
+
+(defun terminal-completion--row-budget
+    (text prompt-width columns terminal-rows)
+  "Return the footer row budget beneath editor TEXT."
+  (multiple-value-bind (editor-row editor-column pending-wrap)
+      (screen-position text :prompt-width prompt-width :columns columns)
+    (declare (ignore editor-column pending-wrap))
+    (max 1 (- terminal-rows (1+ editor-row)))))
+
+(defun terminal-completion--handle-event (editor session event)
+  "Handle EVENT in SESSION and return the next session and forwarding flag."
+  (multiple-value-bind (action candidate)
+      (selector-handle-event
+       (terminal-completion-session-selector session)
+       event)
+    (case action
+      (:changed
+       (terminal-completion--preview editor session candidate)
+       (values session nil))
+      ((:accept :dismiss)
+       (terminal-completion--preview editor session candidate)
+       (values nil t))
+      (:cancel
+       (terminal-completion--restore editor session)
+       (values nil (not (eq event :escape))))
+      (:unhandled
+       (values session t)))))
+
 (defun terminal-editor--suggestion (editor suggestion-function)
   "Return a valid full-text suggestion for EDITOR, or NIL."
   (when (and suggestion-function
@@ -52,13 +258,12 @@
 
 (defun terminal-editor--complete
     (editor &key completion-function common-prefix-function
-                 completion-accept-function prompt prompt-width columns
-                 previous-row highlight-function stream)
-  "Apply or display completion and return the resulting previous row."
+                 completion-accept-function completion-arrangement stream)
+  "Apply completion or return a new interactive completion session."
   (unless completion-function
     (write-char (code-char 7) stream)
     (force-output stream)
-    (return-from terminal-editor--complete previous-row))
+    (return-from terminal-editor--complete nil))
   (let ((text (line-editor-text editor))
         (cursor (line-editor-cursor editor)))
     (multiple-value-bind (start candidates displays)
@@ -69,35 +274,24 @@
                  (> start cursor))
              (write-char (code-char 7) stream)
              (force-output stream)
-             previous-row)
+             nil)
             ((null (rest candidates))
              (let* ((candidate (first candidates))
                     (replacement
                       (funcall completion-accept-function candidate)))
                (terminal-editor--replace-range
                 editor start cursor replacement)
-               previous-row))
+               nil))
             (t
              (let* ((common (funcall common-prefix-function candidates))
                     (prefix-length (- cursor start)))
                (if (> (length common) prefix-length)
                    (progn
                      (terminal-editor--replace-range editor start cursor common)
-                     previous-row)
-                   (progn
-                     (render-line text
-                                  :cursor (length text)
-                                  :prompt-width prompt-width
-                                  :columns columns
-                                  :previous-row previous-row
-                                  :highlight-function highlight-function
-                                  :stream stream)
-                     (render--write-newline stream)
-                     (print-candidates (or displays candidates)
-                                       :columns columns
-                                       :stream stream)
-                     (render--write-prompt
-                      prompt prompt-width columns stream)))))))))
+                     nil)
+                   (terminal-completion--make-session
+                    editor start cursor candidates displays
+                    completion-accept-function completion-arrangement))))))))
 
 (defun terminal-editor--finish
     (editor kind &key payload prompt-width columns previous-row
@@ -153,6 +347,7 @@
                  completion-function
                  (common-prefix-function #'terminal-editor--common-prefix)
                  (completion-accept-function #'identity)
+                 (completion-arrangement :grid)
                  suggestion-function
                  (bracketed-paste-p t))
   "Edit one line under PROMPT and return line and result kind.
@@ -161,18 +356,27 @@ The result kind is :LINE, :ABORT or :EOF. HISTORY is copied into an incremental
 LINE-EDITOR. Terminal ownership remains with the caller through size, raw-mode
 and restore callbacks. Highlighting, completion and suggestion callbacks add
 application policy without coupling Clinedi to a parser or history store.
+COMPLETION-ARRANGEMENT is :GRID for a width-measured row-major selector or
+:VERTICAL for one completion per row. While a selector is open, arrows
+navigate, Tab cycles, Escape restores the uncompleted text, and other input
+keeps the selected completion before applying that input.
 
 When raw mode is unavailable, this function prints the final prompt line and
 uses ordinary READ-LINE."
+  (unless (member completion-arrangement '(:vertical :grid))
+    (error 'type-error
+           :datum completion-arrangement
+           :expected-type '(member :vertical :grid)))
   (multiple-value-bind (preamble editable-prompt)
       (split-prompt prompt)
     (multiple-value-bind (rows columns)
         (funcall terminal-size-function)
-      (declare (ignore rows))
-      (setf columns (max 1 columns))
+      (setf rows (max 1 rows)
+            columns (max 1 columns))
       (let ((editor (make-line-editor :history history))
             (prompt-width (ansi-display-width editable-prompt))
             (previous-row 0)
+            (completion nil)
             (raw-p nil))
         (write-display preamble :stream output-stream)
         (unwind-protect
@@ -187,71 +391,90 @@ uses ordinary READ-LINE."
                (setf previous-row
                      (render--write-prompt editable-prompt prompt-width columns
                                            output-stream))
-               (loop
-                 (let* ((suggestion
-                          (terminal-editor--suggestion
-                           editor suggestion-function))
-                        (suffix
-                          (and suggestion
-                               (subseq suggestion
-                                       (line-editor-cursor editor)))))
-                   (setf previous-row
-                         (render-line
-                          (line-editor-text editor)
-                          :cursor (line-editor-cursor editor)
-                          :prompt-width prompt-width
-                          :columns columns
-                          :previous-row previous-row
-                          :suggestion suffix
-                          :highlight-function highlight-function
-                          :stream output-stream))
-                   (let ((event (read-event :stream input-stream)))
-                     (cond ((and (eq event :right) suggestion
-                                 (= (line-editor-cursor editor)
-                                    (length (line-editor-text editor))))
-                            (line-editor-set-text
-                             editor suggestion :cursor (length suggestion)))
-                           ((eq event :ignore)
-                            nil)
-                           (t
-                            (multiple-value-bind (action payload)
-                                (line-editor-handle-event editor event)
-                              (case action
-                                ((:submit :interrupt :end-of-input)
-                                 (return
-                                   (terminal-editor--finish
-                                    editor action
-                                    :payload payload
-                                    :prompt-width prompt-width
-                                    :columns columns
-                                    :previous-row previous-row
-                                    :highlight-function highlight-function
-                                    :stream output-stream)))
-                                (:complete
-                                 (setf previous-row
-                                       (terminal-editor--complete
-                                        editor
-                                        :completion-function completion-function
-                                        :common-prefix-function
-                                        common-prefix-function
-                                        :completion-accept-function
-                                        completion-accept-function
-                                        :prompt editable-prompt
-                                        :prompt-width prompt-width
-                                        :columns columns
-                                        :previous-row previous-row
-                                        :highlight-function highlight-function
-                                        :stream output-stream)))
-                                (:clear-screen
-                                 (write-string (ansi-clear-screen)
-                                               output-stream)
-                                 (write-display preamble :stream output-stream)
-                                 (setf previous-row
-                                       (render--write-prompt
-                                        editable-prompt prompt-width columns
-                                        output-stream)))
-                                ((:continue :escape)
-                                 nil)))))))))
+               (labels ((handle-editor-event (event)
+                          (multiple-value-bind (action payload)
+                              (line-editor-handle-event editor event)
+                            (case action
+                              ((:submit :interrupt :end-of-input)
+                               (return-from edit-line
+                                 (terminal-editor--finish
+                                  editor action
+                                  :payload payload
+                                  :prompt-width prompt-width
+                                  :columns columns
+                                  :previous-row previous-row
+                                  :highlight-function highlight-function
+                                  :stream output-stream)))
+                              (:complete
+                               (setf completion
+                                     (terminal-editor--complete
+                                      editor
+                                      :completion-function completion-function
+                                      :common-prefix-function
+                                      common-prefix-function
+                                      :completion-accept-function
+                                      completion-accept-function
+                                      :completion-arrangement
+                                      completion-arrangement
+                                      :stream output-stream)))
+                              (:clear-screen
+                               (write-string (ansi-clear-screen) output-stream)
+                               (write-display preamble :stream output-stream)
+                               (setf previous-row
+                                     (render--write-prompt
+                                      editable-prompt prompt-width columns
+                                      output-stream)))
+                              ((:continue :escape :ignored)
+                               nil)))))
+                 (loop
+                   (let* ((suggestion
+                            (and (null completion)
+                                 (terminal-editor--suggestion
+                                  editor suggestion-function)))
+                          (suffix
+                            (and suggestion
+                                 (subseq suggestion
+                                         (line-editor-cursor editor))))
+                          (footer-text nil)
+                          (footer-display nil))
+                     (when completion
+                       (multiple-value-setq (footer-text footer-display)
+                         (terminal-completion--footer
+                          completion
+                          columns
+                          (terminal-completion--row-budget
+                           (line-editor-text editor)
+                           prompt-width columns rows))))
+                     (setf previous-row
+                           (render-line
+                            (line-editor-text editor)
+                            :cursor (line-editor-cursor editor)
+                            :prompt-width prompt-width
+                            :columns columns
+                            :previous-row previous-row
+                            :suggestion suffix
+                            :footer-text footer-text
+                            :footer-display footer-display
+                            :highlight-function highlight-function
+                            :stream output-stream))
+                     (let ((event (read-event :stream input-stream)))
+                       (cond ((eq event :ignore)
+                              nil)
+                             (completion
+                              (multiple-value-bind
+                                    (next-completion forward-event-p)
+                                  (terminal-completion--handle-event
+                                   editor completion event)
+                                (setf completion next-completion)
+                                (when forward-event-p
+                                  (handle-editor-event event))))
+                             ((and (eq event :right) suggestion
+                                   (= (line-editor-cursor editor)
+                                      (length (line-editor-text editor))))
+                              (line-editor-set-text
+                               editor suggestion :cursor (length suggestion)))
+                             (t
+                              (handle-editor-event event))))))))
           (when raw-p
             (when bracketed-paste-p
               (format output-stream "~c[?2004l" +escape-character+)

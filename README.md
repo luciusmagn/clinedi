@@ -76,6 +76,13 @@ the selected value.
 raw mode, terminal size, completion, highlighting and suggestions to callbacks.
 This keeps terminal policy and application semantics outside the library.
 
+Ambiguous completions open a live selector below the edited text. The default
+`:completion-arrangement :grid` fits as many measured columns as the terminal
+width permits and naturally collapses to a vertical list in narrow terminals.
+Callers can request `:vertical` explicitly. Arrow keys navigate the displayed
+geometry, Tab cycles candidates, Escape restores the original prefix, and any
+other input keeps the selected candidate before applying that input.
+
 Enter submits input. Alt-Enter inserts a newline on terminals that encode Alt
 as an Escape prefix. Shift-Enter and Alt-Enter also work when the terminal emits
 CSI-u or modifyOtherKeys sequences for modified Enter. Ctrl-Backspace and
