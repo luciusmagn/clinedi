@@ -68,6 +68,10 @@ physical rows and cursor position across wrapping and explicit newlines. It is
 retracted before scrollback output, then repainted beneath that output without
 entering an alternate screen or clearing earlier terminal contents.
 
+Applications may call `live-region-set-cursor-visible` to keep cursor movement
+hidden across repeated updates. Dismissing the region always restores cursor
+visibility.
+
 ```lisp
 (let ((region (clinedi:make-live-region :columns 80 :maximum-rows 20)))
   (clinedi:live-region-present region "> draft" :cursor 7)

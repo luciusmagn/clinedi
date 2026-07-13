@@ -62,6 +62,21 @@
         (check-equal "replacement repaint uses one terminal write"
                      1
                      (- writes previous-writes)))
+      (live-region-set-cursor-visible region nil)
+      (check-true "cursor visibility can be disabled for repeated updates"
+                  (not (live-region-cursor-visible-p region)))
+      (live-region-present region text :cursor 5)
+      (check-equal "hidden-cursor repaint keeps the cursor hidden"
+                   (ansi-cursor-hide)
+                   (subseq last-write
+                           (- (length last-write)
+                              (length (ansi-cursor-hide)))))
+      (live-region-set-cursor-visible region t)
+      (check-true "cursor visibility can be restored"
+                  (live-region-cursor-visible-p region))
+      (check-equal "restoring cursor visibility applies immediately"
+                   (ansi-cursor-show)
+                   last-write)
       (live-region-append region (format nil "FINAL~%~%"))
       (let ((output (get-output-stream-string stream)))
         (check-equal "scrollback output is appended once"
@@ -119,6 +134,8 @@
       (live-region-dismiss region)
       (check-true "dismissed live region is hidden"
                   (not (live-region-visible-p region)))
+      (check-true "dismissed live region restores terminal cursor visibility"
+                  (live-region-cursor-visible-p region))
       (check-equal "dismissed live region has no rows"
                    0
                    (live-region-row-count region))

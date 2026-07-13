@@ -63,7 +63,12 @@
     :initform 0
     :accessor live-region-cursor-column
     :type integer
-    :documentation "Zero-based terminal column holding the painted cursor."))
+    :documentation "Zero-based terminal column holding the painted cursor.")
+   (cursor-visible-p
+    :initform t
+    :accessor live-region-cursor-visible-p
+    :type boolean
+    :documentation "Whether terminal updates leave the physical cursor visible."))
   (:documentation
    "Transient terminal content that remains beneath ordinary scrollback output."))
 
@@ -137,11 +142,14 @@
   (values))
 
 (defun live-region--emit-update (region function)
-  "Emit one hidden-cursor terminal update composed by FUNCTION."
+  "Emit one terminal update composed by FUNCTION with motion hidden."
   (let ((stream (make-string-output-stream)))
     (write-string (ansi-cursor-hide) stream)
     (funcall function stream)
-    (write-string (ansi-cursor-show) stream)
+    (write-string (if (live-region-cursor-visible-p region)
+                      (ansi-cursor-show)
+                      (ansi-cursor-hide))
+                  stream)
     (live-region--write region (get-output-stream-string stream))
     (live-region--flush region))
   (values))
@@ -227,6 +235,23 @@
 
 
 ;;;; -- Public Lifecycle --
+
+(defun live-region-set-cursor-visible (region visible-p)
+  "Set whether REGION leaves the terminal cursor visible and apply it now.
+
+Repaints always hide cursor motion. When visibility is disabled, every repaint
+also leaves the cursor hidden until visibility is enabled or REGION is
+dismissed."
+  (check-type region live-region)
+  (check-type visible-p boolean)
+  (unless (eq visible-p (live-region-cursor-visible-p region))
+    (setf (live-region-cursor-visible-p region) visible-p)
+    (live-region--write region
+                        (if visible-p
+                            (ansi-cursor-show)
+                            (ansi-cursor-hide)))
+    (live-region--flush region))
+  region)
 
 (defun live-region-suspend (region)
   "Retract REGION without forgetting the presentation that should resume."
@@ -322,13 +347,14 @@ last output row."
   region)
 
 (defun live-region-dismiss (region)
-  "Retract REGION and forget its retained presentation."
+  "Retract REGION, forget its presentation, and restore cursor visibility."
   (check-type region live-region)
   (live-region-suspend region)
   (setf (live-region--text region) ""
         (live-region--display region) ""
         (live-region--cursor region) 0
         (live-region--presented-p region) nil)
+  (live-region-set-cursor-visible region t)
   region)
 
 (defun live-region-resize

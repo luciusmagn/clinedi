@@ -41,6 +41,8 @@
                 #:live-region-row-count
                 #:live-region-cursor-row
                 #:live-region-cursor-column
+                #:live-region-cursor-visible-p
+                #:live-region-set-cursor-visible
                 #:live-region-visible-p
                 #:live-region-present
                 #:live-region-append
