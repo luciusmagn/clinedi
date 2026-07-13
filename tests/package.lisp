@@ -28,6 +28,15 @@
                 #:line-editor-add-history
                 #:line-editor-handle-event
                 #:line-editor-render
+                #:make-selector
+                #:selector-items
+                #:selector-selection
+                #:selector-visible-count
+                #:selector-set-items
+                #:selector-selected-item
+                #:selector-move
+                #:selector-window
+                #:selector-handle-event
                 #:read-event
                 #:screen-position
                 #:screen-window

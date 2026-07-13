@@ -48,6 +48,22 @@ the usual delete-or-EOF behavior. `:stream-end` represents physical stream EOF;
 handling it returns the `:end-of-input` action without clearing partial text.
 `:insert-newline` adds an explicit newline without submitting the editor.
 
+## Candidate selection
+
+`clinedi:selector` is application-neutral navigation and viewport state for
+pickers and interactive completions. Candidate values are opaque, so an
+application can use strings for file completion, model records for a picker,
+or any other values while retaining control of filtering, labels, styling and
+acceptance policy. `selector-handle-event` understands the same semantic arrow,
+completion, submit and cancellation events as the editor.
+
+```lisp
+(let ((selector (clinedi:make-selector
+                 :items '("source/" "source/main.lisp"))))
+  (clinedi:selector-handle-event selector :history-next)
+  (clinedi:selector-selected-item selector))
+```
+
 ## Blocking frontend
 
 `clinedi:edit-line` owns key decoding and repainting while delegating terminal

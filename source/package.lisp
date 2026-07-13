@@ -46,6 +46,18 @@
    #:line-editor-handle-event
    #:line-editor-render
 
+   ;; Candidate selection
+   #:selector
+   #:make-selector
+   #:selector-items
+   #:selector-selection
+   #:selector-visible-count
+   #:selector-set-items
+   #:selector-selected-item
+   #:selector-move
+   #:selector-window
+   #:selector-handle-event
+
    ;; Input and layout
    #:read-event
    #:screen-position
