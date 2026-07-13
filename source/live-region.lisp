@@ -276,16 +276,31 @@ dismissed."
   region)
 
 (defun call-with-live-region-suspended (region function)
-  "Call FUNCTION while REGION is retracted, then restore its presentation."
+  "Call FUNCTION while REGION is retracted, then restore it without cursor flashes.
+
+When REGION normally shows the cursor, compound output keeps it hidden from the
+initial retraction through the final repaint and reveals it once at the end."
   (check-type region live-region)
   (check-type function function)
-  (let ((visible-p (live-region-visible-p region)))
-    (when visible-p
-      (live-region-suspend region))
+  (let ((visible-p (live-region-visible-p region))
+        (cursor-visible-p (live-region-cursor-visible-p region)))
+    (when cursor-visible-p
+      (setf (live-region-cursor-visible-p region) nil)
+      (unless visible-p
+        (live-region--write region (ansi-cursor-hide))
+        (live-region--flush region)))
     (unwind-protect
-         (funcall function)
-      (when visible-p
-        (live-region-resume region)))))
+         (progn
+           (when visible-p
+             (live-region-suspend region))
+           (funcall function))
+      (unwind-protect
+           (when visible-p
+             (live-region-resume region))
+        (setf (live-region-cursor-visible-p region) cursor-visible-p)
+        (when cursor-visible-p
+          (live-region--write region (ansi-cursor-show))
+          (live-region--flush region))))))
 
 (defmacro with-live-region-suspended ((region) &body body)
   "Evaluate BODY with REGION retracted, restoring it after every exit."

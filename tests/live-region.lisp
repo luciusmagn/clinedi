@@ -24,10 +24,13 @@
   (let ((stream (make-string-output-stream))
         (flushes 0)
         (writes 0)
+        (cursor-shows 0)
         (last-write ""))
     (let* ((write-function
              (lambda (text)
                (incf writes)
+               (incf cursor-shows
+                     (live-region-tests--count (ansi-cursor-show) text))
                (setf last-write text)
                (write-string text stream)))
            (region
@@ -112,11 +115,15 @@
       (live-region-resume region)
       (check-true "resumed live region is visible"
                   (live-region-visible-p region))
-      (call-with-live-region-suspended
-       region
-       (lambda ()
-         (check-true "callback runs with region hidden"
-                     (not (live-region-visible-p region)))))
+      (let ((previous-shows cursor-shows))
+        (call-with-live-region-suspended
+         region
+         (lambda ()
+           (check-true "callback runs with region hidden"
+                       (not (live-region-visible-p region)))))
+        (check-equal "compound output reveals the cursor only once"
+                     1
+                     (- cursor-shows previous-shows)))
       (check-true "callback restores live region"
                   (live-region-visible-p region))
       (let ((styled (ansi-colorize text :green)))

@@ -68,7 +68,9 @@ Event-driven applications can keep editable or transient content below their
 ordinary terminal output with `clinedi:live-region`. The region tracks its
 physical rows and cursor position across wrapping and explicit newlines. It is
 retracted before scrollback output, then repainted beneath that output without
-entering an alternate screen or clearing earlier terminal contents.
+entering an alternate screen or clearing earlier terminal contents. Compound
+scrollback updates keep cursor motion hidden until the input cursor is back in
+place.
 
 Applications may call `live-region-set-cursor-visible` to keep cursor movement
 hidden across repeated updates. Dismissing the region always restores cursor
