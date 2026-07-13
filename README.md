@@ -54,12 +54,18 @@ handling it returns the `:end-of-input` action without clearing partial text.
 pickers and interactive completions. Candidate values are opaque, so an
 application can use strings for file completion, model records for a picker,
 or any other values while retaining control of filtering, labels, styling and
-acceptance policy. `selector-handle-event` understands the same semantic arrow,
-completion, submit and cancellation events as the editor.
+acceptance policy. A selector can arrange candidates vertically or in a
+row-major grid that measures candidate cell widths against the available
+terminal width. Arrow keys navigate that geometry, Tab cycles candidates,
+Enter accepts, and ordinary editing input dismisses the chooser while returning
+the selected value.
 
 ```lisp
 (let ((selector (clinedi:make-selector
-                 :items '("source/" "source/main.lisp"))))
+                 :items '("source/" "source/main.lisp")
+                 :arrangement :grid)))
+  (clinedi:selector-arrange selector 80
+                           :width-function #'clinedi:text-cell-width)
   (clinedi:selector-handle-event selector :history-next)
   (clinedi:selector-selected-item selector))
 ```

@@ -52,10 +52,13 @@
    #:selector-items
    #:selector-selection
    #:selector-visible-count
+   #:selector-arrangement
+   #:selector-column-count
    #:selector-set-items
    #:selector-selected-item
    #:selector-move
    #:selector-window
+   #:selector-arrange
    #:selector-handle-event
 
    ;; Input and layout
