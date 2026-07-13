@@ -102,6 +102,18 @@
                   (search "PRINTF" output)))
     (multiple-value-bind (line kind output restores)
         (terminal-editor-test--read
+         (format nil "pri~c~c[Z!~%" #\tab (code-char 27))
+         :raw-mode-function (lambda () t)
+         :bracketed-paste-p nil
+         :completion-function #'complete
+         :completion-accept-function #'accept)
+      (declare (ignore output restores))
+      (check-equal "Shift-Tab cycles live completions backward"
+                   "private !"
+                   line)
+      (check-equal "backward completion remains submittable" :line kind))
+    (multiple-value-bind (line kind output restores)
+        (terminal-editor-test--read
          (format nil "pri~c~c[C~%" #\tab (code-char 27))
          :raw-mode-function (lambda () t)
          :bracketed-paste-p nil

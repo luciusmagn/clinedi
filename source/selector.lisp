@@ -210,10 +210,11 @@ to SELECTOR-ITEMS, and the second value contains each column's measured width."
 (defun selector-handle-event (selector event)
   "Apply navigation EVENT and return an action and optional selected value.
 
-Arrow events navigate with wraparound using the latest arranged grid. Tab
-cycles linearly and submission accepts. Escape, interruption and end-of-input
-cancel. Other input dismisses selection with the selected value, allowing an
-editor to retain that candidate before applying the original event."
+Arrow events navigate with wraparound using the latest arranged grid. Tab and
+Shift-Tab cycle linearly forward and backward. Submission accepts. Escape,
+interruption and end-of-input cancel. Other input dismisses selection with the
+selected value, allowing an editor to retain that candidate before applying
+the original event."
   (check-type selector selector)
   (cond
     ((member event '(:up :history-previous))
@@ -232,6 +233,9 @@ editor to retain that candidate before applying the original event."
      (values :changed (selector-selected-item selector)))
     ((eq event :complete)
      (selector-move selector 1)
+     (values :changed (selector-selected-item selector)))
+    ((eq event :complete-previous)
+     (selector-move selector -1)
      (values :changed (selector-selected-item selector)))
     ((eq event :submit)
      (if (selector-items selector)

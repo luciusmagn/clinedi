@@ -31,6 +31,9 @@
   (check-equal "arrow-up event"
                :history-previous
                (input-test--event (input-test--escape-sequence "[A")))
+  (check-equal "shift-tab event"
+               :complete-previous
+               (input-test--event (input-test--escape-sequence "[Z")))
   (check-equal "delete event"
                :delete
                (input-test--event (input-test--escape-sequence "[3~")))

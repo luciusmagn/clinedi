@@ -374,6 +374,8 @@ clearing buffered text."
        (continue-action))
       ((eq event :complete)
        (values :complete nil))
+      ((eq event :complete-previous)
+       (values :complete-previous nil))
       ((eq event :submit)
        (let ((submitted (copy-seq (line-editor-text editor))))
          (line-editor-add-history editor submitted)

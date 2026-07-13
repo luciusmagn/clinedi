@@ -358,8 +358,9 @@ and restore callbacks. Highlighting, completion and suggestion callbacks add
 application policy without coupling Clinedi to a parser or history store.
 COMPLETION-ARRANGEMENT is :GRID for a width-measured row-major selector or
 :VERTICAL for one completion per row. While a selector is open, arrows
-navigate, Tab cycles, Escape restores the uncompleted text, and other input
-keeps the selected completion before applying that input.
+navigate, Tab and Shift-Tab cycle forward and backward, Escape restores the
+uncompleted text, and other input keeps the selected completion before
+applying that input.
 
 When raw mode is unavailable, this function prints the final prompt line and
 uses ordinary READ-LINE."
@@ -405,18 +406,29 @@ uses ordinary READ-LINE."
                                   :previous-row previous-row
                                   :highlight-function highlight-function
                                   :stream output-stream)))
-                              (:complete
-                               (setf completion
-                                     (terminal-editor--complete
-                                      editor
-                                      :completion-function completion-function
-                                      :common-prefix-function
-                                      common-prefix-function
-                                      :completion-accept-function
-                                      completion-accept-function
-                                      :completion-arrangement
-                                      completion-arrangement
-                                      :stream output-stream)))
+                              ((:complete :complete-previous)
+                               (let ((next-completion
+                                       (terminal-editor--complete
+                                        editor
+                                        :completion-function
+                                        completion-function
+                                        :common-prefix-function
+                                        common-prefix-function
+                                        :completion-accept-function
+                                        completion-accept-function
+                                        :completion-arrangement
+                                        completion-arrangement
+                                        :stream output-stream)))
+                                 (when (and next-completion
+                                            (eq action :complete-previous))
+                                   (let ((selector
+                                           (terminal-completion-session-selector
+                                            next-completion)))
+                                     (selector-move selector -1)
+                                     (terminal-completion--preview
+                                      editor next-completion
+                                      (selector-selected-item selector))))
+                                 (setf completion next-completion)))
                               (:clear-screen
                                (write-string (ansi-clear-screen) output-stream)
                                (write-display preamble :stream output-stream)

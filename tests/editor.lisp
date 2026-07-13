@@ -121,6 +121,7 @@
               "stream line")
      "A line event must replace and submit the buffer.")
     (dolist (case '((:complete :complete)
+                    (:complete-previous :complete-previous)
                     (:escape :escape)
                     (:clear-screen :clear-screen)
                     (:interrupt :interrupt)

@@ -39,6 +39,7 @@
   "Decode a CSI sequence BODY, reading paste payloads from STREAM."
   (cond ((string= body "A") :history-previous)
         ((string= body "B") :history-next)
+        ((string= body "Z") :complete-previous)
         ((member body '("1;5C" "5C") :test #'string=) :word-right)
         ((member body '("1;5D" "5D") :test #'string=) :word-left)
         ((string= body "C") :right)
@@ -100,7 +101,8 @@ editing keywords. Bracketed paste becomes one (:PASTE text) event, with terminal
 controls sanitized before the text reaches an editor. Modified Enter becomes
 :INSERT-NEWLINE when distinguishable from Enter. Ctrl-Backspace and Ctrl-W
 become :KILL-WORD. Ctrl-Left and Ctrl-Right become :WORD-LEFT and :WORD-RIGHT.
-Ctrl-D becomes :END-OF-INPUT; physical stream EOF becomes :STREAM-END."
+Shift-Tab becomes :COMPLETE-PREVIOUS. Ctrl-D becomes :END-OF-INPUT; physical
+stream EOF becomes :STREAM-END."
   (let ((character (read-char stream nil nil)))
     (cond ((null character)
            :stream-end)

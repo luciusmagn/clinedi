@@ -56,9 +56,9 @@ application can use strings for file completion, model records for a picker,
 or any other values while retaining control of filtering, labels, styling and
 acceptance policy. A selector can arrange candidates vertically or in a
 row-major grid that measures candidate cell widths against the available
-terminal width. Arrow keys navigate that geometry, Tab cycles candidates,
-Enter accepts, and ordinary editing input dismisses the chooser while returning
-the selected value.
+terminal width. Arrow keys navigate that geometry, Tab and Shift-Tab cycle
+candidates forward and backward, Enter accepts, and ordinary editing input
+dismisses the chooser while returning the selected value.
 
 ```lisp
 (let ((selector (clinedi:make-selector
@@ -80,8 +80,9 @@ Ambiguous completions open a live selector below the edited text. The default
 `:completion-arrangement :grid` fits as many measured columns as the terminal
 width permits and naturally collapses to a vertical list in narrow terminals.
 Callers can request `:vertical` explicitly. Arrow keys navigate the displayed
-geometry, Tab cycles candidates, Escape restores the original prefix, and any
-other input keeps the selected candidate before applying that input.
+geometry, Tab and Shift-Tab cycle forward and backward, Escape restores the
+original prefix, and any other input keeps the selected candidate before
+applying that input.
 
 Enter submits input. Alt-Enter inserts a newline on terminals that encode Alt
 as an Escape prefix. Shift-Enter and Alt-Enter also work when the terminal emits
