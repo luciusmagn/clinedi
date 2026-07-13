@@ -170,6 +170,16 @@ are extended-grapheme boundaries."
   (write-char #\return stream)
   (values))
 
+(defun render--overwrite-display (text stream)
+  "Overwrite display TEXT, clearing stale cells before explicit newlines."
+  (loop for character across text
+        do (if (char= character #\newline)
+               (progn
+                 (write-string (ansi-clear-line-right) stream)
+                 (render--write-newline stream))
+               (write-char character stream)))
+  (values))
+
 (defun render--write-prompt (prompt prompt-width columns stream)
   "Write the static editable PROMPT and return its ending row."
   (write-string prompt stream)
@@ -223,18 +233,19 @@ ANSI presentation below the editor. Their visible contents must match."
                  (write-string (ansi-cursor-up (- previous-row prompt-row))
                                stream)
                  (write-string (ansi-cursor-column prompt-column) stream)
-                 (write-string (ansi-clear-below) stream)
-                 (write-display (funcall highlight-function text)
-                                :stream stream)
+                 (render--overwrite-display
+                  (funcall highlight-function text) stream)
                  (when (plusp (length suffix))
-                   (write-display (ansi-colorize suffix :bright-black)
-                                  :stream stream))
+                   (render--overwrite-display
+                    (ansi-colorize suffix :bright-black) stream))
                  (when footer-p
+                   (write-string (ansi-clear-line-right) stream)
                    (render--write-newline stream)
-                   (write-display (or footer-display footer)
-                                  :stream stream))
+                   (render--overwrite-display
+                    (or footer-display footer) stream))
                  (when exact-wrap
                    (render--write-newline stream))
+                 (write-string (ansi-clear-below) stream)
                  (write-string (ansi-cursor-up (- end-row target-row)) stream)
                  (write-string (ansi-cursor-column target-column) stream))
             (write-string (ansi-cursor-show) stream)

@@ -116,7 +116,13 @@
     (check-true "rendered footer follows editor text"
                 (search "print  printf" rendered))
     (check-true "footer redraw returns to editor cursor"
-                (search (ansi-cursor-up 1) rendered)))
+                (search (ansi-cursor-up 1) rendered))
+    (check-true "redraw overwrites content before clearing stale remainder"
+                (< (search "print  printf" rendered)
+                   (search (ansi-clear-below) rendered)))
+    (check-true "redraw clears stale editor cells before its footer"
+                (< (search (ansi-clear-line-right) rendered)
+                   (search "print  printf" rendered))))
   (let ((*presentation-enabled* nil))
     (check-equal "disabled presentation leaves text plain"
                  "plain"
