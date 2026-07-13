@@ -77,6 +77,17 @@
       (check-equal "resize reflows retained presentation"
                    5
                    (live-region-row-count region))
+      (live-region-resize region 3 :maximum-rows 2)
+      (check-equal "resize records the live-region row cap"
+                   2
+                   (live-region-maximum-rows region))
+      (check-true "viewport caps retained multiline content"
+                  (<= (live-region-row-count region) 2))
+      (live-region-present region text
+                           :cursor (length text)
+                           :display (ansi-colorize text :green))
+      (check-true "viewport follows the cursor through styled content"
+                  (<= (live-region-row-count region) 2))
       (live-region-suspend region)
       (check-true "suspended live region is hidden"
                   (not (live-region-visible-p region)))

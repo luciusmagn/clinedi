@@ -2,20 +2,23 @@
 
 (in-package #:clinedi)
 
-(defun screen-position (text &key (prompt-width 0) (columns 80)
+(defun screen-position (text &key (prompt-width 0) (columns 80) (start 0)
                                   (end (length text)))
-  "Return the screen position after TEXT through END.
+  "Return the screen position after TEXT from START through END.
 
 PROMPT-WIDTH is the number of cells preceding TEXT and COLUMNS is the terminal
 width. The values are row, zero-based column and whether an exact-width wrap
 still needs to be materialized."
   (setf columns (max 1 columns)
+        start (min (max 0 start) (length text))
         end (min end (length text)))
+  (when (> start end)
+    (setf start end))
   (let ((row (floor prompt-width columns))
         (column (mod prompt-width columns))
         (pending-wrap (and (plusp prompt-width)
                            (zerop (mod prompt-width columns))))
-        (index 0))
+        (index start))
     (loop while (< index end)
           do (let ((character (char text index)))
                (cond ((char= character #\newline)
@@ -49,6 +52,109 @@ still needs to be materialized."
                                   pending-wrap t)))
                         (setf index next)))))
           finally (return (values row column pending-wrap)))))
+
+(defun screen--row-starts (text columns)
+  "Return character indexes beginning TEXT's modeled physical screen rows."
+  (let ((starts (list 0))
+        (column 0)
+        (pending-wrap nil)
+        (index 0))
+    (loop while (< index (length text))
+          do (let ((character (char text index)))
+               (cond
+                 ((char= character #\newline)
+                  (incf index)
+                  (if pending-wrap
+                      (setf (first starts) index
+                            pending-wrap nil)
+                      (push index starts))
+                  (setf column 0))
+                 ((char= character #\return)
+                  (setf column 0
+                        pending-wrap nil)
+                  (incf index))
+                 (t
+                  (let* ((next (grapheme-next-boundary text index))
+                         (width (min columns
+                                     (grapheme-cell-width text index next))))
+                    (when (plusp width)
+                      (when pending-wrap
+                        (setf pending-wrap nil))
+                      (when (and (plusp column)
+                                 (> (+ column width) columns))
+                        (push index starts)
+                        (setf column 0))
+                      (incf column width)
+                      (when (= column columns)
+                        (push next starts)
+                        (setf column 0
+                              pending-wrap t)))
+                    (setf index next))))))
+    (nreverse starts)))
+
+(defun screen--row-count (text columns start end)
+  "Return the physical row count for TEXT between START and END."
+  (multiple-value-bind (row column pending-wrap)
+      (screen-position text :columns columns :start start :end end)
+    (declare (ignore column pending-wrap))
+    (1+ row)))
+
+(defun screen--cursor-row-index (starts cursor)
+  "Return the last row in STARTS beginning no later than CURSOR."
+  (loop for start in starts
+        for row from 0
+        while (<= start cursor)
+        maximize row into cursor-row
+        finally (return (or cursor-row 0))))
+
+(defun screen-window
+    (text &key (cursor (length text)) (columns 80) (rows 24))
+  "Return a cursor-containing character window of TEXT fitting within ROWS.
+
+The values are start index, end index, cursor index relative to the window,
+whether content precedes the window, and whether content follows it. Indexes
+are extended-grapheme boundaries."
+  (check-type text string)
+  (unless (and (integerp columns) (plusp columns))
+    (error 'type-error :datum columns :expected-type '(integer 1 *)))
+  (unless (and (integerp rows) (plusp rows))
+    (error 'type-error :datum rows :expected-type '(integer 1 *)))
+  (check-type cursor integer)
+  (let* ((safe-cursor
+           (grapheme-boundary-at-or-after
+            text
+            (min (length text) (max 0 cursor))))
+         (starts (screen--row-starts text columns))
+         (total-rows (length starts)))
+    (when (<= total-rows rows)
+      (return-from screen-window
+        (values 0 (length text) safe-cursor nil nil)))
+    (let* ((content-rows (max 1 (1- rows)))
+           (cursor-row (screen--cursor-row-index starts safe-cursor))
+           (start-row
+             (min (max 0 (- cursor-row (floor content-rows 2)))
+                  (max 0 (- total-rows content-rows))))
+           (end-row (min total-rows (+ start-row content-rows)))
+           (start (nth start-row starts))
+           (end (if (< end-row total-rows)
+                    (nth end-row starts)
+                    (length text))))
+      (setf start (min start safe-cursor)
+            end (max end safe-cursor))
+      (loop while (> (screen--row-count text columns start end) rows)
+            do (cond
+                 ((> end safe-cursor)
+                  (setf end (grapheme-previous-boundary text end)))
+                 ((< start safe-cursor)
+                  (setf start (grapheme-next-boundary
+                               text start safe-cursor)))
+                 (t
+                  (return))))
+      (values start
+              end
+              (- safe-cursor start)
+              (plusp start)
+              (< end (length text))))))
 
 (defun write-display (text &key (stream *standard-output*))
   "Write TEXT to STREAM, following newlines with explicit returns."

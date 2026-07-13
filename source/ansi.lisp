@@ -114,6 +114,15 @@ Return TEXT unchanged when presentation is disabled."
           return (+ index 2)
         finally (return (length string))))
 
+(defun ansi--escape-end (string index)
+  "Return the index just after STRING's escape sequence at INDEX."
+  (if (< (1+ index) (length string))
+      (case (char string (1+ index))
+        (#\[ (ansi--skip-csi string (+ index 2)))
+        (#\] (ansi--skip-osc string (+ index 2)))
+        (t (+ index 2)))
+      (1+ index)))
+
 (defun ansi-strip (string)
   "Remove ANSI CSI, OSC and two-byte escape sequences from STRING."
   (with-output-to-string (clean)
@@ -123,17 +132,33 @@ Return TEXT unchanged when presentation is disabled."
             do (let ((character (char string index)))
                  (cond ((and (char= character +escape-character+)
                              (< (1+ index) length))
-                        (let ((kind (char string (1+ index))))
-                          (setf index
-                                (case kind
-                                  (#\[ (ansi--skip-csi string (+ index 2)))
-                                  (#\] (ansi--skip-osc string (+ index 2)))
-                                  (t (+ index 2))))))
+                        (setf index (ansi--escape-end string index)))
                        ((char= character +escape-character+)
                         (incf index))
                        (t
                         (write-char character clean)
                         (incf index))))))))
+
+(defun ansi--visible-slice (string start end)
+  "Return STRING controls and visible characters between START and END.
+
+All trusted ANSI controls are retained so the slice enters and leaves the same
+presentation state as STRING. START and END index ANSI-stripped characters."
+  (with-output-to-string (slice)
+    (let ((index 0)
+          (visible-index 0))
+      (loop while (< index (length string))
+            do (if (char= (char string index) +escape-character+)
+                   (let ((sequence-end (ansi--escape-end string index)))
+                     (write-string string slice
+                                          :start index
+                                          :end sequence-end)
+                     (setf index sequence-end))
+                   (progn
+                     (when (<= start visible-index (1- end))
+                       (write-char (char string index) slice))
+                     (incf visible-index)
+                     (incf index)))))))
 
 (defun ansi-display-width (string)
   "Return the number of visible terminal cells STRING occupies."

@@ -30,12 +30,14 @@
                 #:line-editor-render
                 #:read-event
                 #:screen-position
+                #:screen-window
                 #:write-display
                 #:render-line
                 #:print-candidates
                 #:split-prompt
                 #:make-live-region
                 #:live-region-columns
+                #:live-region-maximum-rows
                 #:live-region-row-count
                 #:live-region-cursor-row
                 #:live-region-cursor-column

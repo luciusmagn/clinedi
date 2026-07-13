@@ -44,6 +44,36 @@
                  (format nil "a~%~cb" #\return)
                  (with-output-to-string (stream)
                    (write-display text :stream stream))))
+  (let ((text (format nil "zero~%one~%two~%three~%four")))
+    (dolist (cursor (list 0 7 15 (length text)))
+      (multiple-value-bind (start end window-cursor before-p after-p)
+          (screen-window text :cursor cursor :columns 5 :rows 3)
+        (declare (ignore before-p after-p))
+        (check-equal (format nil "screen window preserves cursor ~d" cursor)
+                     cursor
+                     (+ start window-cursor))
+        (check-true (format nil "screen window contains cursor ~d" cursor)
+                    (<= start cursor end))
+        (check-true (format nil "screen window fits row cap ~d" cursor)
+                    (multiple-value-bind (row column pending-wrap)
+                        (screen-position text
+                                         :columns 5
+                                         :start start
+                                         :end end)
+                      (declare (ignore column pending-wrap))
+                      (<= (1+ row) 3))))))
+  (let ((text "abcdefghijklmnop"))
+    (multiple-value-bind (start end cursor before-p after-p)
+        (screen-window text :cursor 8 :columns 4 :rows 2)
+      (declare (ignore cursor before-p after-p))
+      (check-true "wrapped screen window fits an exact-width row cap"
+                  (multiple-value-bind (row column pending-wrap)
+                      (screen-position text
+                                       :columns 4
+                                       :start start
+                                       :end end)
+                    (declare (ignore column pending-wrap))
+                    (<= (1+ row) 2)))))
   (check-equal "completion columns use cell widths"
                (format nil "猫  a   ~%~c" #\return)
                (with-output-to-string (stream)

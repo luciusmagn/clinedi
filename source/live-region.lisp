@@ -18,6 +18,12 @@
     :accessor live-region-columns
     :type integer
     :documentation "Positive terminal width used for live-region geometry.")
+   (maximum-rows
+    :initarg :maximum-rows
+    :initform nil
+    :accessor live-region-maximum-rows
+    :type (or null integer)
+    :documentation "Optional positive cap on painted physical terminal rows.")
    (text
     :initform ""
     :accessor live-region--text
@@ -74,16 +80,21 @@
   (force-output *standard-output*)
   (values))
 
-(defun make-live-region (&key (columns 80)
+(defun make-live-region (&key (columns 80) maximum-rows
                               (write-function #'live-region--standard-write)
                               (flush-function #'live-region--standard-flush))
-  "Create a live region using COLUMNS and terminal output callbacks."
+  "Create a live region using COLUMNS, optional MAXIMUM-ROWS, and callbacks."
   (unless (and (integerp columns) (plusp columns))
     (error 'type-error :datum columns :expected-type '(integer 1 *)))
+  (unless (or (null maximum-rows)
+              (and (integerp maximum-rows) (plusp maximum-rows)))
+    (error 'type-error :datum maximum-rows
+                       :expected-type '(or null (integer 1 *))))
   (check-type write-function function)
   (check-type flush-function function)
   (make-instance 'live-region
                  :columns columns
+                 :maximum-rows maximum-rows
                  :write-function write-function
                  :flush-function flush-function))
 
@@ -149,11 +160,27 @@
                (write-string (ansi-cursor-up 1) stream))))
   (values))
 
-(defun live-region--presentation-geometry (region)
-  "Return retained end and cursor geometry for REGION."
-  (let ((text    (live-region--text region))
-        (columns (live-region-columns region))
-        (cursor  (live-region--cursor region)))
+(defun live-region--windowed-presentation (region)
+  "Return REGION's retained presentation cropped around its cursor when needed."
+  (let ((text (live-region--text region))
+        (display (live-region--display region))
+        (cursor (live-region--cursor region))
+        (maximum-rows (live-region-maximum-rows region)))
+    (if maximum-rows
+        (multiple-value-bind (start end window-cursor before-p after-p)
+            (screen-window text
+                           :cursor cursor
+                           :columns (live-region-columns region)
+                           :rows maximum-rows)
+          (declare (ignore before-p after-p))
+          (values (subseq text start end)
+                  (ansi--visible-slice display start end)
+                  window-cursor))
+        (values text display cursor))))
+
+(defun live-region--presentation-geometry (region text cursor)
+  "Return end and cursor geometry for REGION's windowed TEXT and CURSOR."
+  (let ((columns (live-region-columns region)))
     (multiple-value-bind (cursor-row cursor-column cursor-wrap)
         (screen-position text :columns columns :end cursor)
       (declare (ignore cursor-wrap))
@@ -163,9 +190,9 @@
         (values end-row cursor-row cursor-column pending-wrap)))))
 
 (defun live-region--write-presentation
-    (region stream end-row cursor-row cursor-column pending-wrap)
-  "Write REGION's retained presentation and cursor placement to STREAM."
-  (write-display (live-region--display region) :stream stream)
+    (stream display end-row cursor-row cursor-column pending-wrap)
+  "Write DISPLAY and its logical cursor placement to STREAM."
+  (write-display display :stream stream)
   (when pending-wrap
     (live-region--write-newline stream))
   (write-string (ansi-cursor-up (- end-row cursor-row)) stream)
@@ -185,15 +212,17 @@
   "Paint REGION's retained presentation and restore its logical cursor."
   (unless (live-region--presented-p region)
     (return-from live-region--paint region))
-  (multiple-value-bind (end-row cursor-row cursor-column pending-wrap)
-      (live-region--presentation-geometry region)
-    (live-region--emit-update
-     region
-     (lambda (stream)
-       (live-region--write-presentation
-        region stream end-row cursor-row cursor-column pending-wrap)))
-    (live-region--record-presentation
-     region end-row cursor-row cursor-column))
+  (multiple-value-bind (text display cursor)
+      (live-region--windowed-presentation region)
+    (multiple-value-bind (end-row cursor-row cursor-column pending-wrap)
+        (live-region--presentation-geometry region text cursor)
+      (live-region--emit-update
+       region
+       (lambda (stream)
+         (live-region--write-presentation
+          stream display end-row cursor-row cursor-column pending-wrap)))
+      (live-region--record-presentation
+       region end-row cursor-row cursor-column)))
   region)
 
 
@@ -254,17 +283,21 @@ content. CURSOR is normalized to a complete grapheme boundary within TEXT."
           (live-region--display region) (copy-seq display)
           (live-region--cursor region) safe-cursor
           (live-region--presented-p region) t)
-    (multiple-value-bind (end-row cursor-row cursor-column pending-wrap)
-        (live-region--presentation-geometry region)
-      (live-region--emit-update
-       region
-       (lambda (stream)
-         (when (live-region-visible-p region)
-           (live-region--write-erasure region stream))
-         (live-region--write-presentation
-          region stream end-row cursor-row cursor-column pending-wrap)))
-      (live-region--record-presentation
-       region end-row cursor-row cursor-column))))
+    (multiple-value-bind (window-text window-display window-cursor)
+        (live-region--windowed-presentation region)
+      (multiple-value-bind (end-row cursor-row cursor-column pending-wrap)
+          (live-region--presentation-geometry
+           region window-text window-cursor)
+        (live-region--emit-update
+         region
+         (lambda (stream)
+           (when (live-region-visible-p region)
+             (live-region--write-erasure region stream))
+           (live-region--write-presentation
+            stream window-display end-row cursor-row cursor-column
+            pending-wrap)))
+        (live-region--record-presentation
+         region end-row cursor-row cursor-column)))))
 
 (defun live-region-append (region text &key (display text))
   "Append TEXT to ordinary scrollback and repaint REGION beneath it.
@@ -298,16 +331,26 @@ last output row."
         (live-region--presented-p region) nil)
   region)
 
-(defun live-region-resize (region columns)
-  "Reflow REGION for positive COLUMNS without replaying scrollback output."
+(defun live-region-resize
+    (region columns &key (maximum-rows nil maximum-rows-p))
+  "Reflow REGION for COLUMNS and optional MAXIMUM-ROWS without replaying output."
   (check-type region live-region)
   (unless (and (integerp columns) (plusp columns))
     (error 'type-error :datum columns :expected-type '(integer 1 *)))
-  (unless (= columns (live-region-columns region))
+  (when maximum-rows-p
+    (unless (or (null maximum-rows)
+                (and (integerp maximum-rows) (plusp maximum-rows)))
+      (error 'type-error :datum maximum-rows
+                         :expected-type '(or null (integer 1 *)))))
+  (unless (and (= columns (live-region-columns region))
+               (or (not maximum-rows-p)
+                   (eql maximum-rows (live-region-maximum-rows region))))
     (let ((visible-p (live-region-visible-p region)))
       (when visible-p
         (live-region-suspend region))
       (setf (live-region-columns region) columns)
+      (when maximum-rows-p
+        (setf (live-region-maximum-rows region) maximum-rows))
       (when visible-p
         (live-region-resume region))))
   region)

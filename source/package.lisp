@@ -49,6 +49,7 @@
    ;; Input and layout
    #:read-event
    #:screen-position
+   #:screen-window
    #:write-display
    #:render-line
    #:print-candidates
@@ -58,6 +59,7 @@
    #:live-region
    #:make-live-region
    #:live-region-columns
+   #:live-region-maximum-rows
    #:live-region-row-count
    #:live-region-cursor-row
    #:live-region-cursor-column
