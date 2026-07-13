@@ -52,6 +52,12 @@ Return TEXT unchanged when presentation is disabled."
       (format nil "~c[~dA" +escape-character+ lines)
       ""))
 
+(defun ansi-cursor-down (lines)
+  "Return the sequence moving the cursor LINES down, or an empty string."
+  (if (and *presentation-enabled* (plusp lines))
+      (format nil "~c[~dB" +escape-character+ lines)
+      ""))
+
 (defun ansi-cursor-column (column)
   "Return the sequence moving the cursor to zero-based COLUMN."
   (if *presentation-enabled*

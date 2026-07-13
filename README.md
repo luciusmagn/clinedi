@@ -58,6 +58,27 @@ Enter submits input. Alt-Enter inserts a newline on terminals that encode Alt
 as an Escape prefix. Shift-Enter and Alt-Enter also work when the terminal emits
 CSI-u or modifyOtherKeys sequences for modified Enter.
 
+## Live application region
+
+Event-driven applications can keep editable or transient content below their
+ordinary terminal output with `clinedi:live-region`. The region tracks its
+physical rows and cursor position across wrapping and explicit newlines. It is
+retracted before scrollback output, then repainted beneath that output without
+entering an alternate screen or clearing earlier terminal contents.
+
+```lisp
+(let ((region (clinedi:make-live-region :columns 80)))
+  (clinedi:live-region-present region "> draft" :cursor 7)
+  (clinedi:live-region-append region "tool completed\n")
+  (clinedi:live-region-resize region 120)
+  (clinedi:live-region-dismiss region))
+```
+
+`live-region-present` accepts separate plain geometry text and trusted ANSI
+display text when an application owns styling. Their visible contents must be
+identical. `live-region-append` always leaves the cursor on a fresh line before
+repainting the region, so appended output remains in normal scrollback.
+
 ## Tests
 
 Run the regression suite on every supported Lisp:

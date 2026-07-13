@@ -34,6 +34,19 @@
                 #:render-line
                 #:print-candidates
                 #:split-prompt
+                #:make-live-region
+                #:live-region-columns
+                #:live-region-row-count
+                #:live-region-cursor-row
+                #:live-region-cursor-column
+                #:live-region-visible-p
+                #:live-region-present
+                #:live-region-append
+                #:live-region-suspend
+                #:live-region-resume
+                #:live-region-dismiss
+                #:live-region-resize
+                #:call-with-live-region-suspended
                 #:edit-line)
   (:export #:run-tests))
 

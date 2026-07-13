@@ -22,6 +22,7 @@
    #:ansi-colorize
    #:ansi-reverse-video
    #:ansi-cursor-up
+   #:ansi-cursor-down
    #:ansi-cursor-column
    #:ansi-cursor-hide
    #:ansi-cursor-show
@@ -45,13 +46,32 @@
    #:line-editor-handle-event
    #:line-editor-render
 
-   ;; Input, layout and blocking frontend
+   ;; Input and layout
    #:read-event
    #:screen-position
    #:write-display
    #:render-line
    #:print-candidates
    #:split-prompt
+
+   ;; Scrollback-safe live application regions
+   #:live-region
+   #:make-live-region
+   #:live-region-columns
+   #:live-region-row-count
+   #:live-region-cursor-row
+   #:live-region-cursor-column
+   #:live-region-visible-p
+   #:live-region-present
+   #:live-region-append
+   #:live-region-suspend
+   #:live-region-resume
+   #:live-region-dismiss
+   #:live-region-resize
+   #:call-with-live-region-suspended
+   #:with-live-region-suspended
+
+   ;; Blocking frontend
    #:edit-line)
   (:documentation
    "Portable editing state, Unicode terminal geometry and line input."))
