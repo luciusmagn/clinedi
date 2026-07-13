@@ -1,0 +1,19 @@
+#!/bin/sh
+# Run Clinedi's regression suite on every supported local Lisp.
+set -eu
+cd "$(dirname "$0")"
+
+output_root="${TMPDIR:-/tmp}/clinedi-fasl-$$"
+trap 'rm -rf "$output_root"' EXIT HUP INT TERM
+
+ASDF_OUTPUT_TRANSLATIONS="$PWD/:$output_root/ccl/"
+export ASDF_OUTPUT_TRANSLATIONS
+ccl -n -b \
+    -e '(setf ccl:*default-file-character-encoding* :utf-8)' \
+    -l scripts/check.lisp \
+    -e '(ccl:quit 0)'
+
+ASDF_OUTPUT_TRANSLATIONS="$PWD/:$output_root/sbcl/"
+export ASDF_OUTPUT_TRANSLATIONS
+sbcl --noinform --non-interactive \
+    --load scripts/check.lisp
