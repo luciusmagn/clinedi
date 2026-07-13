@@ -152,6 +152,18 @@
           do (setf cursor previous))
     cursor))
 
+(defun line-editor--word-end (text cursor)
+  "Return the grapheme boundary at the end of the word after CURSOR."
+  (labels ((next-boundary ()
+             (grapheme-next-boundary text cursor)))
+    (loop while (< cursor (length text))
+          while (line-editor--whitespace-character-p (char text cursor))
+          do (setf cursor (next-boundary)))
+    (loop while (< cursor (length text))
+          while (not (line-editor--whitespace-character-p (char text cursor)))
+          do (setf cursor (next-boundary)))
+    cursor))
+
 (defun line-editor--kill-to-end (editor)
   "Delete EDITOR's text after its cursor."
   (line-editor--set-state editor
@@ -321,6 +333,16 @@ clearing buffered text."
                (grapheme-next-boundary
                 (line-editor-text editor)
                 (line-editor-cursor editor))))
+       (continue-action))
+      ((eq event :word-left)
+       (setf (slot-value editor 'cursor)
+             (line-editor--word-start (line-editor-text editor)
+                                      (line-editor-cursor editor)))
+       (continue-action))
+      ((eq event :word-right)
+       (setf (slot-value editor 'cursor)
+             (line-editor--word-end (line-editor-text editor)
+                                    (line-editor-cursor editor)))
        (continue-action))
       ((eq event :home)
        (setf (slot-value editor 'cursor) 0)

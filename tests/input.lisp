@@ -22,7 +22,7 @@
   (check-equal "control-D editing event"
                :end-of-input
                (input-test--event (string (code-char 4))))
-  (check-equal "control-left event"
+  (check-equal "control-B event"
                :left
                (input-test--event (string (code-char 2))))
   (check-equal "raw control-backspace event"
@@ -34,6 +34,14 @@
   (check-equal "delete event"
                :delete
                (input-test--event (input-test--escape-sequence "[3~")))
+  (dolist (case '(("xterm control-left event" "[1;5D" :word-left)
+                  ("short control-left event" "[5D" :word-left)
+                  ("xterm control-right event" "[1;5C" :word-right)
+                  ("short control-right event" "[5C" :word-right)))
+    (check-equal (first case)
+                 (third case)
+                 (input-test--event
+                  (input-test--escape-sequence (second case)))))
   (check-equal "legacy alt-enter event"
                :insert-newline
                (input-test--event
