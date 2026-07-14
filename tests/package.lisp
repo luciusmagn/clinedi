@@ -17,6 +17,7 @@
                 #:ansi-cursor-hide
                 #:ansi-cursor-show
                 #:ansi-cursor-up
+                #:ansi-cursor-column
                 #:ansi-clear-below
                 #:ansi-clear-line-right
                 #:ansi-strip

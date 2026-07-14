@@ -74,7 +74,10 @@ dismisses the chooser while returning the selected value.
 
 `clinedi:edit-line` owns key decoding and repainting while delegating terminal
 raw mode, terminal size, completion, highlighting and suggestions to callbacks.
-This keeps terminal policy and application semantics outside the library.
+This keeps terminal policy and application semantics outside the library. The
+terminal-size callback is refreshed while input is active, so wrapped text,
+ghost suggestions and completion layouts follow terminal resizes without
+losing the input cursor.
 
 Ambiguous completions open a live selector below the edited text. The default
 `:completion-arrangement :grid` fits as many measured columns as the terminal

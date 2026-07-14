@@ -24,6 +24,20 @@
                   (get-output-stream-string output-stream)
                   restores))))))
 
+(defun terminal-editor-test--render-frames (output)
+  "Return the complete cursor-hidden redraw frames in OUTPUT."
+  (let ((hide (ansi-cursor-hide))
+        (show (ansi-cursor-show)))
+    (loop with offset = 0
+          for start = (search hide output :start2 offset)
+          while start
+          for show-start = (search show output
+                                   :start2 (+ start (length hide)))
+          while show-start
+          for end = (+ show-start (length show))
+          collect (subseq output start end)
+          do (setf offset end))))
+
 (defun run-terminal-editor-tests ()
   "Run blocking frontend and callback regression tests."
   (multiple-value-bind (line kind output restores)
@@ -45,6 +59,58 @@
     (check-equal "raw editor submit kind" :line kind)
     (check-true "raw editor renders entered text" (search "abc" output))
     (check-equal "raw editor restores terminal" 1 restores))
+  (let ((size-calls 0)
+        (restores 0))
+    (flet ((changing-size ()
+             ;; The first three typed frames use eight columns. The width
+             ;; changes while the fourth input event is being read.
+             (incf size-calls)
+             (values 24 (if (<= size-calls 8) 8 4))))
+      (with-input-from-string (input-stream (format nil "abcd~%"))
+        (let ((output-stream (make-string-output-stream)))
+          (multiple-value-bind (line kind)
+              (edit-line
+               (format nil "preamble~%> ")
+               :input-stream input-stream
+               :output-stream output-stream
+               :terminal-size-function #'changing-size
+               :raw-mode-function (lambda () t)
+               :restore-function (lambda () (incf restores))
+               :suggestion-function
+               (lambda (text history)
+                 (declare (ignore history))
+                 (and (plusp (length text))
+                      (string= text "abcdefgh" :end2 (length text))
+                      "abcdefgh"))
+               :bracketed-paste-p nil)
+            (let* ((frames
+                     (terminal-editor-test--render-frames
+                      (get-output-stream-string output-stream)))
+                   (resized-frame (fifth frames))
+                   (resized-prefix
+                     (concatenate 'string
+                                  (ansi-cursor-hide)
+                                  (ansi-cursor-up 1)
+                                  (ansi-cursor-column 2))))
+              (check-equal "resized editor preserves submitted text"
+                           "abcd" line)
+              (check-equal "resized editor submit kind" :line kind)
+              (check-equal "resize test redraw frame count" 6
+                           (length frames))
+              (check-true "terminal size is refreshed while editing"
+                          (>= size-calls 9))
+              (check-true
+               "resize redraw uses the reflowed prior cursor row"
+               (and resized-frame
+                    (<= (length resized-prefix) (length resized-frame))
+                    (string= resized-prefix resized-frame
+                             :end2 (length resized-prefix))))
+              (check-true "resize redraw retains the wrapped suggestion"
+                          (and resized-frame
+                               (search (ansi-colorize "efgh" :bright-black)
+                                       resized-frame)))
+              (check-equal "resized editor restores terminal" 1
+                           restores)))))))
   (multiple-value-bind (line kind output restores)
       (terminal-editor-test--read
        (format nil "first~c~csecond~%" (code-char 27) #\return)

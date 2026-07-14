@@ -356,6 +356,8 @@ The result kind is :LINE, :ABORT or :EOF. HISTORY is copied into an incremental
 LINE-EDITOR. Terminal ownership remains with the caller through size, raw-mode
 and restore callbacks. Highlighting, completion and suggestion callbacks add
 application policy without coupling Clinedi to a parser or history store.
+The size callback is refreshed between redraws and input events so a resized
+terminal can reflow the last visible frame without displacing the cursor.
 COMPLETION-ARRANGEMENT is :GRID for a width-measured row-major selector or
 :VERTICAL for one completion per row. While a selector is open, arrows
 navigate, Tab and Shift-Tab cycle forward and backward, Escape restores the
@@ -377,6 +379,8 @@ uses ordinary READ-LINE."
       (let ((editor (make-line-editor :history history))
             (prompt-width (ansi-display-width editable-prompt))
             (previous-row 0)
+            (rendered-text "")
+            (rendered-cursor 0)
             (completion nil)
             (raw-p nil))
         (write-display preamble :stream output-stream)
@@ -392,7 +396,33 @@ uses ordinary READ-LINE."
                (setf previous-row
                      (render--write-prompt editable-prompt prompt-width columns
                                            output-stream))
-               (labels ((handle-editor-event (event)
+               (labels ((refresh-terminal-size ()
+                          (multiple-value-bind (next-rows next-columns)
+                              (funcall terminal-size-function)
+                            (setf next-rows (max 1 next-rows)
+                                  next-columns (max 1 next-columns))
+                            (unless (= next-columns columns)
+                              ;; The terminal reflows the frame that is
+                              ;; already visible. Recompute where that old
+                              ;; frame left the physical cursor before using
+                              ;; the new width to paint the next frame.
+                              (multiple-value-bind
+                                    (row column pending-wrap)
+                                  (screen-position
+                                   rendered-text
+                                   :prompt-width prompt-width
+                                   :columns next-columns
+                                   :end rendered-cursor)
+                                (declare (ignore column pending-wrap))
+                                (setf previous-row row)))
+                            (setf rows next-rows
+                                  columns next-columns)))
+                        (remember-rendered-frame ()
+                          (setf rendered-text
+                                (copy-seq (line-editor-text editor))
+                                rendered-cursor
+                                (line-editor-cursor editor)))
+                        (handle-editor-event (event)
                           (multiple-value-bind (action payload)
                               (line-editor-handle-event editor event)
                             (case action
@@ -430,15 +460,19 @@ uses ordinary READ-LINE."
                                       (selector-selected-item selector))))
                                  (setf completion next-completion)))
                               (:clear-screen
+                               (refresh-terminal-size)
                                (write-string (ansi-clear-screen) output-stream)
                                (write-display preamble :stream output-stream)
                                (setf previous-row
                                      (render--write-prompt
                                       editable-prompt prompt-width columns
-                                      output-stream)))
+                                      output-stream)
+                                     rendered-text ""
+                                     rendered-cursor 0))
                               ((:continue :escape :ignored)
                                nil)))))
                  (loop
+                   (refresh-terminal-size)
                    (let* ((suggestion
                             (and (null completion)
                                  (terminal-editor--suggestion
@@ -469,7 +503,12 @@ uses ordinary READ-LINE."
                             :footer-display footer-display
                             :highlight-function highlight-function
                             :stream output-stream))
+                     (remember-rendered-frame)
                      (let ((event (read-event :stream input-stream)))
+                       ;; A resize commonly happens while READ-EVENT is
+                       ;; blocked. Refresh now so submit and clear-screen use
+                       ;; the geometry of the frame the user can see.
+                       (refresh-terminal-size)
                        (cond ((eq event :ignore)
                               nil)
                              (completion
