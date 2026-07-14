@@ -82,6 +82,7 @@
    #:live-region-set-cursor-visible
    #:live-region-visible-p
    #:live-region-present
+   #:live-region-append-and-present
    #:live-region-append
    #:live-region-suspend
    #:live-region-resume

@@ -65,6 +65,33 @@
         (check-equal "replacement repaint uses one terminal write"
                      1
                      (- writes previous-writes)))
+      (let ((previous-flushes flushes)
+            (previous-writes writes)
+            (replacement (format nil "> updated~%")))
+        (live-region-append-and-present
+         region
+         (format nil "STREAMED~%")
+         replacement
+         :cursor 3
+         :appended-display (ansi-colorize (format nil "STREAMED~%") :blue)
+         :display (ansi-colorize replacement :green))
+        (check-equal "atomic append and repaint uses one terminal write"
+                     1
+                     (- writes previous-writes))
+        (check-equal "atomic append and repaint uses one terminal flush"
+                     1
+                     (- flushes previous-flushes))
+        (check-equal "atomic append emits scrollback once"
+                     1
+                     (live-region-tests--count "STREAMED" last-write))
+        (check-true "atomic append paints the replacement in the same frame"
+                    (search "updated" last-write))
+        (check-equal "atomic append records replacement cursor row"
+                     0
+                     (live-region-cursor-row region))
+        (check-equal "atomic append records replacement cursor column"
+                     3
+                     (live-region-cursor-column region)))
       (live-region-set-cursor-visible region nil)
       (check-true "cursor visibility can be disabled for repeated updates"
                   (not (live-region-cursor-visible-p region)))

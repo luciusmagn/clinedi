@@ -233,6 +233,35 @@
        region end-row cursor-row cursor-column)))
   region)
 
+(defun live-region--replace
+    (region text display cursor appended-text appended-display)
+  "Replace REGION, atomically writing optional appended scrollback first."
+  (setf (live-region--text region) (copy-seq text)
+        (live-region--display region) (copy-seq display)
+        (live-region--cursor region) cursor
+        (live-region--presented-p region) t)
+  (multiple-value-bind (window-text window-display window-cursor)
+      (live-region--windowed-presentation region)
+    (multiple-value-bind (end-row cursor-row cursor-column pending-wrap)
+        (live-region--presentation-geometry
+         region window-text window-cursor)
+      (live-region--emit-update
+       region
+       (lambda (stream)
+         (when (live-region-visible-p region)
+           (live-region--write-erasure region stream))
+         (when (plusp (length appended-text))
+           (write-display appended-display :stream stream)
+           (unless (char= (char appended-text (1- (length appended-text)))
+                          #\newline)
+             (live-region--write-newline stream)))
+         (live-region--write-presentation
+          stream window-display end-row cursor-row cursor-column
+          pending-wrap)))
+      (live-region--record-presentation
+       region end-row cursor-row cursor-column)))
+  region)
+
 
 ;;;; -- Public Lifecycle --
 
@@ -319,25 +348,29 @@ content. CURSOR is normalized to a complete grapheme boundary within TEXT."
           (grapheme-boundary-at-or-after
            text
            (min (length text) (max 0 cursor)))))
-    (setf (live-region--text region) (copy-seq text)
-          (live-region--display region) (copy-seq display)
-          (live-region--cursor region) safe-cursor
-          (live-region--presented-p region) t)
-    (multiple-value-bind (window-text window-display window-cursor)
-        (live-region--windowed-presentation region)
-      (multiple-value-bind (end-row cursor-row cursor-column pending-wrap)
-          (live-region--presentation-geometry
-           region window-text window-cursor)
-        (live-region--emit-update
-         region
-         (lambda (stream)
-           (when (live-region-visible-p region)
-             (live-region--write-erasure region stream))
-           (live-region--write-presentation
-            stream window-display end-row cursor-row cursor-column
-            pending-wrap)))
-        (live-region--record-presentation
-         region end-row cursor-row cursor-column)))))
+    (live-region--replace region text display safe-cursor "" "")))
+
+(defun live-region-append-and-present
+    (region appended-text text
+     &key (appended-display appended-text)
+          (cursor (length text))
+          (display text))
+  "Append scrollback and replace REGION in one terminal write and flush.
+
+APPENDED-DISPLAY and DISPLAY may contain trusted ANSI styling but must preserve
+the visible contents of APPENDED-TEXT and TEXT. A missing newline after
+APPENDED-TEXT is supplied before the replacement presentation. CURSOR is
+normalized to a complete grapheme boundary within TEXT."
+  (check-type region live-region)
+  (live-region--validate-display appended-text appended-display)
+  (live-region--validate-display text display)
+  (check-type cursor integer)
+  (let ((safe-cursor
+          (grapheme-boundary-at-or-after
+           text
+           (min (length text) (max 0 cursor)))))
+    (live-region--replace region text display safe-cursor
+                          appended-text appended-display)))
 
 (defun live-region-append (region text &key (display text))
   "Append TEXT to ordinary scrollback and repaint REGION beneath it.

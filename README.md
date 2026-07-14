@@ -113,6 +113,8 @@ visibility.
 (let ((region (clinedi:make-live-region :columns 80 :maximum-rows 20)))
   (clinedi:live-region-present region "> draft" :cursor 7)
   (clinedi:live-region-append region "tool completed\n")
+  (clinedi:live-region-append-and-present
+   region "partial output\n" "> revised draft" :cursor 15)
   (clinedi:live-region-resize region 120 :maximum-rows 30)
   (clinedi:live-region-dismiss region))
 ```
@@ -120,9 +122,11 @@ visibility.
 `live-region-present` accepts separate plain geometry text and trusted ANSI
 display text when an application owns styling. Their visible contents must be
 identical. `live-region-append` always leaves the cursor on a fresh line before
-repainting the region, so appended output remains in normal scrollback. An
-optional `maximum-rows` keeps long multiline content inside a cursor-following
-viewport while retaining the complete presentation for later repainting.
+repainting the region, so appended output remains in normal scrollback.
+`live-region-append-and-present` performs that append and a replacement repaint
+in one terminal write and flush for streaming applications. An optional
+`maximum-rows` keeps long multiline content inside a cursor-following viewport
+while retaining the complete presentation for later repainting.
 
 Applications that manage their own presentation can use `clinedi:screen-window`
 to obtain grapheme-safe start, end, and cursor indexes for the same bounded
