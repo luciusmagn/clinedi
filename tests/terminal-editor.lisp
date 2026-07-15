@@ -123,6 +123,29 @@
     (check-equal "multiline input still submits with enter" :line kind))
   (multiple-value-bind (line kind output restores)
       (terminal-editor-test--read
+       (format nil
+               "abcd~c~cxy~c~cabcdef~c[A!~%"
+               (code-char 27) #\return
+               (code-char 27) #\return
+               (code-char 27))
+       :raw-mode-function (lambda () t)
+       :bracketed-paste-p nil)
+    (declare (ignore output restores))
+    (check-equal "Up edits the preceding visual line"
+                 (format nil "abcd~%xy!~%abcdef")
+                 line)
+    (check-equal "vertically edited input remains submittable" :line kind))
+  (multiple-value-bind (line kind output restores)
+      (terminal-editor-test--read
+       (format nil "~c[A~%" (code-char 27))
+       :history #("older")
+       :raw-mode-function (lambda () t)
+       :bracketed-paste-p nil)
+    (declare (ignore output restores))
+    (check-equal "Up beyond the first visual row recalls history" "older" line)
+    (check-equal "history fallback remains submittable" :line kind))
+  (multiple-value-bind (line kind output restores)
+      (terminal-editor-test--read
        "partial"
        :raw-mode-function (lambda () t)
        :bracketed-paste-p nil)

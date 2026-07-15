@@ -47,6 +47,9 @@ UIs that own their repaint loop. `:end-of-input` represents Ctrl-D and follows
 the usual delete-or-EOF behavior. `:stream-end` represents physical stream EOF;
 handling it returns the `:end-of-input` action without clearing partial text.
 `:insert-newline` adds an explicit newline without submitting the editor.
+Arrow events return `:up` or `:down` so event-driven callers can invoke
+`line-editor-move-vertical` with their current terminal width and prompt width,
+falling back to explicit history events when it reports no adjacent visual row.
 
 ## Candidate selection
 
@@ -93,7 +96,9 @@ CSI-u or modifyOtherKeys sequences for modified Enter. Ctrl-Backspace and
 Ctrl-W delete the whitespace and word before the cursor; Ctrl-Backspace works
 with its raw control byte and its CSI-u or modifyOtherKeys encodings. Ctrl-Left
 and Ctrl-Right move across words when the terminal emits the usual modified
-arrow sequences.
+arrow sequences. Up and Down move by physical display rows across explicit
+newlines and terminal wrapping while preserving the preferred cell column;
+only movement beyond the first or last visual row falls back to history.
 
 ## Live application region
 

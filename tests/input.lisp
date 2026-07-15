@@ -29,8 +29,17 @@
                :kill-word
                (input-test--event (string (code-char 8))))
   (check-equal "arrow-up event"
-               :history-previous
+               :up
                (input-test--event (input-test--escape-sequence "[A")))
+  (check-equal "arrow-down event"
+               :down
+               (input-test--event (input-test--escape-sequence "[B")))
+  (check-equal "control-P history event"
+               :history-previous
+               (input-test--event (string (code-char 16))))
+  (check-equal "control-N history event"
+               :history-next
+               (input-test--event (string (code-char 14))))
   (check-equal "shift-tab event"
                :complete-previous
                (input-test--event (input-test--escape-sequence "[Z")))

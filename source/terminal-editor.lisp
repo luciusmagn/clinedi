@@ -422,55 +422,77 @@ uses ordinary READ-LINE."
                                 (copy-seq (line-editor-text editor))
                                 rendered-cursor
                                 (line-editor-cursor editor)))
+                        (vertical-event (event)
+                          (case event
+                            (:up
+                             (unless (line-editor-move-vertical
+                                      editor -1
+                                      :columns columns
+                                      :prompt-width prompt-width)
+                               ':history-previous))
+                            (:down
+                             (unless (line-editor-move-vertical
+                                      editor 1
+                                      :columns columns
+                                      :prompt-width prompt-width)
+                               ':history-next))
+                            (t
+                             event)))
                         (handle-editor-event (event)
-                          (multiple-value-bind (action payload)
-                              (line-editor-handle-event editor event)
-                            (case action
-                              ((:submit :interrupt :end-of-input)
-                               (return-from edit-line
-                                 (terminal-editor--finish
-                                  editor action
-                                  :payload payload
-                                  :prompt-width prompt-width
-                                  :columns columns
-                                  :previous-row previous-row
-                                  :highlight-function highlight-function
-                                  :stream output-stream)))
-                              ((:complete :complete-previous)
-                               (let ((next-completion
-                                       (terminal-editor--complete
-                                        editor
-                                        :completion-function
-                                        completion-function
-                                        :common-prefix-function
-                                        common-prefix-function
-                                        :completion-accept-function
-                                        completion-accept-function
-                                        :completion-arrangement
-                                        completion-arrangement
-                                        :stream output-stream)))
-                                 (when (and next-completion
-                                            (eq action :complete-previous))
-                                   (let ((selector
-                                           (terminal-completion-session-selector
-                                            next-completion)))
-                                     (selector-move selector -1)
-                                     (terminal-completion--preview
-                                      editor next-completion
-                                      (selector-selected-item selector))))
-                                 (setf completion next-completion)))
-                              (:clear-screen
-                               (refresh-terminal-size)
-                               (write-string (ansi-clear-screen) output-stream)
-                               (write-display preamble :stream output-stream)
-                               (setf previous-row
-                                     (render--write-prompt
-                                      editable-prompt prompt-width columns
-                                      output-stream)
-                                     rendered-text ""
-                                     rendered-cursor 0))
-                              ((:continue :escape :ignored)
-                               nil)))))
+                          (let ((effective-event (vertical-event event)))
+                            (when effective-event
+                              (multiple-value-bind (action payload)
+                                  (line-editor-handle-event
+                                   editor effective-event)
+                                (case action
+                                  ((:submit :interrupt :end-of-input)
+                                   (return-from edit-line
+                                     (terminal-editor--finish
+                                      editor action
+                                      :payload payload
+                                      :prompt-width prompt-width
+                                      :columns columns
+                                      :previous-row previous-row
+                                      :highlight-function highlight-function
+                                      :stream output-stream)))
+                                  ((:complete :complete-previous)
+                                   (let ((next-completion
+                                           (terminal-editor--complete
+                                            editor
+                                            :completion-function
+                                            completion-function
+                                            :common-prefix-function
+                                            common-prefix-function
+                                            :completion-accept-function
+                                            completion-accept-function
+                                            :completion-arrangement
+                                            completion-arrangement
+                                            :stream output-stream)))
+                                     (when (and next-completion
+                                                (eq action
+                                                    :complete-previous))
+                                       (let ((selector
+                                               (terminal-completion-session-selector
+                                                next-completion)))
+                                         (selector-move selector -1)
+                                         (terminal-completion--preview
+                                          editor next-completion
+                                          (selector-selected-item selector))))
+                                     (setf completion next-completion)))
+                                  (:clear-screen
+                                   (refresh-terminal-size)
+                                   (write-string (ansi-clear-screen)
+                                                 output-stream)
+                                   (write-display preamble
+                                                  :stream output-stream)
+                                   (setf previous-row
+                                         (render--write-prompt
+                                          editable-prompt prompt-width columns
+                                          output-stream)
+                                         rendered-text ""
+                                         rendered-cursor 0))
+                                  ((:continue :escape :ignored)
+                                   nil)))))))
                  (loop
                    (refresh-terminal-size)
                    (let* ((suggestion

@@ -33,7 +33,11 @@
    (history-stash
     :initform nil
     :documentation
-    "Draft saved when history navigation begins, or NIL otherwise."))
+    "Draft saved when history navigation begins, or NIL otherwise.")
+   (vertical-column
+    :initform nil
+    :documentation
+    "Preferred terminal cell column during repeated vertical movement."))
   (:documentation
    "Portable editable-line state driven by semantic input events."))
 
@@ -79,7 +83,15 @@
   (let ((owned-text (copy-seq text)))
     (setf (slot-value editor 'text) owned-text
           (slot-value editor 'cursor)
-          (line-editor--normalize-cursor owned-text cursor)))
+          (line-editor--normalize-cursor owned-text cursor)
+          (slot-value editor 'vertical-column) nil))
+  editor)
+
+(defun line-editor--set-cursor (editor cursor)
+  "Move EDITOR to CURSOR and end any repeated vertical movement."
+  (setf (slot-value editor 'cursor)
+        (line-editor--normalize-cursor (line-editor-text editor) cursor)
+        (slot-value editor 'vertical-column) nil)
   editor)
 
 (defun line-editor--insert (editor inserted-text)
@@ -293,9 +305,9 @@ advanced when necessary so that it never divides a grapheme."
 
 Editing events return (VALUES :CONTINUE NIL).  Submission returns the full
 line as its payload and clears the buffer.  UI actions such as completion are
-returned to the caller without modifying the buffer. :END-OF-INPUT applies
-Ctrl-D semantics. :STREAM-END returns the :END-OF-INPUT action without
-clearing buffered text."
+returned to the caller without modifying the buffer. :UP and :DOWN are returned
+for layout-aware vertical movement. :END-OF-INPUT applies Ctrl-D semantics.
+:STREAM-END returns the :END-OF-INPUT action without clearing buffered text."
   (check-type editor line-editor)
   (labels ((continue-action ()
              (values :continue nil))
@@ -321,35 +333,38 @@ clearing buffered text."
        (line-editor-handle-event editor :submit))
       ((eq event :left)
        (when (plusp (line-editor-cursor editor))
-         (setf (slot-value editor 'cursor)
-               (grapheme-previous-boundary
-                (line-editor-text editor)
-                (line-editor-cursor editor))))
+         (line-editor--set-cursor
+          editor
+          (grapheme-previous-boundary
+           (line-editor-text editor)
+           (line-editor-cursor editor))))
        (continue-action))
       ((eq event :right)
        (when (< (line-editor-cursor editor)
                 (length (line-editor-text editor)))
-         (setf (slot-value editor 'cursor)
-               (grapheme-next-boundary
-                (line-editor-text editor)
-                (line-editor-cursor editor))))
+         (line-editor--set-cursor
+          editor
+          (grapheme-next-boundary
+           (line-editor-text editor)
+           (line-editor-cursor editor))))
        (continue-action))
       ((eq event :word-left)
-       (setf (slot-value editor 'cursor)
-             (line-editor--word-start (line-editor-text editor)
-                                      (line-editor-cursor editor)))
+       (line-editor--set-cursor
+        editor
+        (line-editor--word-start (line-editor-text editor)
+                                 (line-editor-cursor editor)))
        (continue-action))
       ((eq event :word-right)
-       (setf (slot-value editor 'cursor)
-             (line-editor--word-end (line-editor-text editor)
-                                    (line-editor-cursor editor)))
+       (line-editor--set-cursor
+        editor
+        (line-editor--word-end (line-editor-text editor)
+                               (line-editor-cursor editor)))
        (continue-action))
       ((eq event :home)
-       (setf (slot-value editor 'cursor) 0)
+       (line-editor--set-cursor editor 0)
        (continue-action))
       ((eq event :end)
-       (setf (slot-value editor 'cursor)
-             (length (line-editor-text editor)))
+       (line-editor--set-cursor editor (length (line-editor-text editor)))
        (continue-action))
       ((eq event :backspace)
        (line-editor--delete-backward editor)
@@ -376,6 +391,10 @@ clearing buffered text."
        (values :complete nil))
       ((eq event :complete-previous)
        (values :complete-previous nil))
+      ((eq event :up)
+       (values :up nil))
+      ((eq event :down)
+       (values :down nil))
       ((eq event :submit)
        (let ((submitted (copy-seq (line-editor-text editor))))
          (line-editor-add-history editor submitted)

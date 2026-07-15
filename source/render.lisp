@@ -107,6 +107,89 @@ still needs to be materialized."
         maximize row into cursor-row
         finally (return (or cursor-row 0))))
 
+(defun screen--boundary-positions (text prompt-width columns)
+  "Return grapheme boundary indexes and screen positions throughout TEXT."
+  (setf columns (max 1 columns)
+        prompt-width (max 0 prompt-width))
+  (let ((positions nil)
+        (row (floor prompt-width columns))
+        (column (mod prompt-width columns))
+        (pending-wrap (and (plusp prompt-width)
+                           (zerop (mod prompt-width columns))))
+        (index 0))
+    (push (list 0 row column) positions)
+    (loop while (< index (length text))
+          do (let ((character (char text index)))
+               (cond
+                 ((char= character #\newline)
+                  (incf index)
+                  (if pending-wrap
+                      (setf pending-wrap nil)
+                      (incf row))
+                  (setf column 0))
+                 ((char= character #\return)
+                  (incf index)
+                  (setf column 0
+                        pending-wrap nil))
+                 (t
+                  (let* ((next (grapheme-next-boundary text index))
+                         (width (min columns
+                                     (grapheme-cell-width text index next))))
+                    (when (plusp width)
+                      (when pending-wrap
+                        (setf pending-wrap nil))
+                      (when (and (plusp column)
+                                 (> (+ column width) columns))
+                        (incf row)
+                        (setf column 0))
+                      (incf column width)
+                      (when (= column columns)
+                        (incf row)
+                        (setf column 0
+                              pending-wrap t)))
+                    (setf index next))))
+             (push (list index row column) positions)))
+    (nreverse positions)))
+
+(defun line-editor-move-vertical
+    (editor direction &key (columns 80) (prompt-width 0))
+  "Move EDITOR by one physical display row and return whether it moved.
+
+DIRECTION is -1 for the previous row or 1 for the next row. COLUMNS and
+PROMPT-WIDTH describe the current terminal layout in cells. Repeated movement
+retains the original preferred cell column across shorter rows."
+  (check-type editor line-editor)
+  (unless (member direction '(-1 1))
+    (error 'type-error :datum direction :expected-type '(member -1 1)))
+  (unless (and (integerp columns) (plusp columns))
+    (error 'type-error :datum columns :expected-type '(integer 1 *)))
+  (unless (and (integerp prompt-width) (not (minusp prompt-width)))
+    (error 'type-error :datum prompt-width :expected-type '(integer 0 *)))
+  (let* ((positions
+           (screen--boundary-positions
+            (line-editor-text editor) prompt-width columns))
+         (cursor-position
+           (find (line-editor-cursor editor) positions :key #'first))
+         (target-row (+ (second cursor-position) direction))
+         (preferred-column
+           (or (slot-value editor 'vertical-column)
+               (third cursor-position)))
+         (best nil)
+         (best-distance nil))
+    (dolist (position positions)
+      (when (= (second position) target-row)
+        (let ((distance (abs (- preferred-column (third position)))))
+          (when (or (null best)
+                    (< distance best-distance)
+                    (and (= distance best-distance)
+                         (< (third position) (third best))))
+            (setf best position
+                  best-distance distance)))))
+    (when best
+      (setf (slot-value editor 'cursor) (first best)
+            (slot-value editor 'vertical-column) preferred-column)
+      t)))
+
 (defun screen-window
     (text &key (cursor (length text)) (columns 80) (rows 24))
   "Return a cursor-containing character window of TEXT fitting within ROWS.

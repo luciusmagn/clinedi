@@ -31,6 +31,7 @@
                 #:line-editor-clear
                 #:line-editor-add-history
                 #:line-editor-handle-event
+                #:line-editor-move-vertical
                 #:line-editor-render
                 #:make-selector
                 #:selector-items
