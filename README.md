@@ -50,6 +50,10 @@ handling it returns the `:end-of-input` action without clearing partial text.
 Arrow events return `:up` or `:down` so event-driven callers can invoke
 `line-editor-move-vertical` with their current terminal width and prompt width,
 falling back to explicit history events when it reports no adjacent visual row.
+Pass `:history-match-function` to the constructor to filter those history
+events. The function receives the complete draft captured when traversal begins
+and each candidate entry. Down past the newest match restores that draft and
+its original cursor; an empty draft always traverses every entry.
 
 ## Candidate selection
 
@@ -98,7 +102,9 @@ with its raw control byte and its CSI-u or modifyOtherKeys encodings. Ctrl-Left
 and Ctrl-Right move across words when the terminal emits the usual modified
 arrow sequences. Up and Down move by physical display rows across explicit
 newlines and terminal wrapping while preserving the preferred cell column;
-only movement beyond the first or last visual row falls back to history.
+only movement beyond the first or last visual row falls back to history. The
+blocking frontend accepts the same optional `:history-match-function` as the
+incremental editor.
 
 ## Live application region
 

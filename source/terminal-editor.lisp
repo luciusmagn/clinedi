@@ -338,6 +338,7 @@
 
 (defun edit-line
     (prompt &key (history #())
+                 history-match-function
                  (input-stream *standard-input*)
                  (output-stream *standard-output*)
                  (terminal-size-function #'terminal-editor--default-size)
@@ -353,9 +354,12 @@
   "Edit one line under PROMPT and return line and result kind.
 
 The result kind is :LINE, :ABORT or :EOF. HISTORY is copied into an incremental
-LINE-EDITOR. Terminal ownership remains with the caller through size, raw-mode
-and restore callbacks. Highlighting, completion and suggestion callbacks add
-application policy without coupling Clinedi to a parser or history store.
+LINE-EDITOR. HISTORY-MATCH-FUNCTION optionally filters traversal by the fixed
+draft present when it begins; it receives that draft and each candidate entry.
+An empty draft always traverses all entries. Terminal ownership remains with
+the caller through size, raw-mode and restore callbacks. Highlighting,
+completion and suggestion callbacks add application policy without coupling
+Clinedi to a parser or history store.
 The size callback is refreshed between redraws and input events so a resized
 terminal can reflow the last visible frame without displacing the cursor.
 COMPLETION-ARRANGEMENT is :GRID for a width-measured row-major selector or
@@ -376,7 +380,9 @@ uses ordinary READ-LINE."
         (funcall terminal-size-function)
       (setf rows (max 1 rows)
             columns (max 1 columns))
-      (let ((editor (make-line-editor :history history))
+      (let ((editor (make-line-editor
+                     :history history
+                     :history-match-function history-match-function))
             (prompt-width (ansi-display-width editable-prompt))
             (previous-row 0)
             (rendered-text "")

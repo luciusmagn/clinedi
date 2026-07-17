@@ -88,6 +88,64 @@
                           "History must enforce its limit and suppress duplicates."))
   nil)
 
+(defun editor-tests--test-filtered-history ()
+  "Test fixed-query filtered traversal and exact draft restoration."
+  (flet ((contains-p (query entry)
+           (search query entry)))
+    (let ((editor
+            (make-line-editor
+             :text "needle"
+             :cursor 2
+             :history #("old needle"
+                        "duplicate needle"
+                        "unrelated"
+                        "duplicate needle"
+                        "new needle"
+                        "only ne")
+             :history-match-function #'contains-p)))
+      (dolist (expected '("new needle" "duplicate needle"
+                          "duplicate needle" "old needle" "old needle"))
+        (editor-tests--event editor :history-previous :continue)
+        (editor-tests--assert (string= (line-editor-text editor) expected)
+                              "Filtered history expected ~S, got ~S."
+                              expected (line-editor-text editor)))
+      (editor-tests--assert
+       (= (line-editor-cursor editor) (length "old needle"))
+       "Recalled history must place the cursor at the entry's end.")
+      (dolist (expected '("duplicate needle" "duplicate needle"
+                          "new needle" "needle"))
+        (editor-tests--event editor :history-next :continue)
+        (editor-tests--assert (string= (line-editor-text editor) expected)
+                              "Forward filtered history expected ~S, got ~S."
+                              expected (line-editor-text editor)))
+      (editor-tests--assert (= (line-editor-cursor editor) 2)
+                            "Leaving history must restore the draft cursor.")
+      (editor-tests--event editor :history-next :continue)
+      (editor-tests--assert (and (string= (line-editor-text editor) "needle")
+                                 (= (line-editor-cursor editor) 2))
+                            "History-next outside traversal must be a no-op."))
+    (let ((editor
+            (make-line-editor
+             :text "missing"
+             :cursor 3
+             :history #("alpha beta" "release")
+             :history-match-function #'contains-p)))
+      (editor-tests--event editor :history-previous :continue)
+      (editor-tests--event editor :history-next :continue)
+      (editor-tests--assert
+       (and (string= (line-editor-text editor) "missing")
+            (= (line-editor-cursor editor) 3))
+       "A history search without matches must preserve the draft.")
+      (line-editor-set-text editor "beta")
+      (editor-tests--event editor :history-previous :continue)
+      (editor-tests--assert (string= (line-editor-text editor) "alpha beta")
+                            "A new draft must start a fresh history search.")
+      (editor-tests--event editor '(:insert "!") :continue)
+      (editor-tests--event editor :history-next :continue)
+      (editor-tests--assert (string= (line-editor-text editor) "alpha beta!")
+                            "Editing a recalled entry must end traversal.")))
+  nil)
+
 (defun editor-tests--test-vertical-movement ()
   "Test visual-row movement across explicit, short, wrapped, and wide rows."
   (let* ((text (format nil "abcd~%xy~%abcdef"))
@@ -192,10 +250,34 @@
   nil)
 
 (defun editor-tests--test-named-constructor ()
-  "Test the application-oriented named constructor."
-  (let ((editor (line-editor-create :text "ready")))
+  "Test public construction paths and their history matcher defaults."
+  (let ((editor
+          (line-editor-create
+           :text "ready"
+           :history #("older")
+           :history-match-function (lambda (query entry)
+                                     (declare (ignore query entry))
+                                     nil))))
     (editor-tests--assert (string= (line-editor-text editor) "ready")
-                          "The named constructor must preserve initial text."))
+                          "The named constructor must preserve initial text.")
+    (editor-tests--assert
+     (functionp (line-editor-history-match-function editor))
+     "The named constructor must retain the history matcher.")
+    (editor-tests--event editor :history-previous :continue)
+    (editor-tests--assert (string= (line-editor-text editor) "ready")
+                          "The named constructor must apply its matcher."))
+  (let ((editor
+          (make-instance 'clinedi:line-editor
+                         :text "draft"
+                         :cursor 5
+                         :history (make-array 1
+                                              :adjustable t
+                                              :fill-pointer 1
+                                              :initial-element "older")
+                         :history-limit 10)))
+    (editor-tests--event editor :history-previous :continue)
+    (editor-tests--assert (string= (line-editor-text editor) "older")
+                          "Direct construction must default to unfiltered history."))
   nil)
 
 (defun run-editor-tests ()
@@ -203,6 +285,7 @@
   (editor-tests--test-editing)
   (editor-tests--test-vertical-movement)
   (editor-tests--test-history)
+  (editor-tests--test-filtered-history)
   (editor-tests--test-actions)
   (editor-tests--test-named-constructor)
   (editor-tests--test-render)

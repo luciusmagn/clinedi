@@ -146,6 +146,18 @@
     (check-equal "history fallback remains submittable" :line kind))
   (multiple-value-bind (line kind output restores)
       (terminal-editor-test--read
+       (format nil "log~c[A~%" (code-char 27))
+       :history #("git log --oneline" "echo newer")
+       :history-match-function (lambda (query entry)
+                                 (search query entry))
+       :raw-mode-function (lambda () t)
+       :bracketed-paste-p nil)
+    (declare (ignore output restores))
+    (check-equal "Up recalls the newest matching history entry"
+                 "git log --oneline" line)
+    (check-equal "filtered history fallback remains submittable" :line kind))
+  (multiple-value-bind (line kind output restores)
+      (terminal-editor-test--read
        "partial"
        :raw-mode-function (lambda () t)
        :bracketed-paste-p nil)

@@ -40,6 +40,7 @@
    #:line-editor-cursor
    #:line-editor-history
    #:line-editor-history-limit
+   #:line-editor-history-match-function
    #:line-editor-set-text
    #:line-editor-clear
    #:line-editor-add-history

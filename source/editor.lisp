@@ -26,6 +26,13 @@
     :reader line-editor-history-limit
     :type integer
     :documentation "Maximum number of retained history entries.")
+   (history-match-function
+    :initarg :history-match-function
+    :initform nil
+    :reader line-editor-history-match-function
+    :type (or null function)
+    :documentation
+    "Optional function of draft and entry used to filter history traversal.")
    (history-index
     :initform nil
     :documentation
@@ -33,7 +40,11 @@
    (history-stash
     :initform nil
     :documentation
-    "Draft saved when history navigation begins, or NIL otherwise.")
+    "Draft saved as the fixed query when history navigation begins.")
+   (history-stash-cursor
+    :initform nil
+    :documentation
+    "Cursor saved with HISTORY-STASH, or NIL outside history traversal.")
    (vertical-column
     :initform nil
     :documentation
@@ -71,7 +82,8 @@
 (defun line-editor--leave-history (editor)
   "Leave EDITOR's history traversal and discard its saved draft."
   (setf (slot-value editor 'history-index) nil
-        (slot-value editor 'history-stash) nil)
+        (slot-value editor 'history-stash) nil
+        (slot-value editor 'history-stash-cursor) nil)
   nil)
 
 (defun line-editor--set-state (editor text cursor &key leave-history-p)
@@ -200,38 +212,59 @@
      :leave-history-p t))
   nil)
 
+(defun line-editor--history-entry-matches-p (editor query entry)
+  "True when ENTRY is eligible for EDITOR's fixed history QUERY."
+  (let ((function (line-editor-history-match-function editor)))
+    (or (zerop (length query))
+        (null function)
+        (not (null (funcall function query entry))))))
+
+(defun line-editor--history-matching-index (editor query start direction)
+  "Find a history entry matching QUERY from START in DIRECTION."
+  (let ((history (slot-value editor 'history)))
+    (loop for index = start then (+ index direction)
+          while (and (<= 0 index) (< index (length history)))
+          when (line-editor--history-entry-matches-p
+                editor query (aref history index))
+            return index)))
+
 (defun line-editor--history-previous (editor)
-  "Recall the next older history entry in EDITOR."
+  "Recall the next older history entry matching EDITOR's saved draft."
   (let* ((history (slot-value editor 'history))
-         (index   (slot-value editor 'history-index)))
-    (when (plusp (length history))
-      (cond
-        ((null index)
-         (setf (slot-value editor 'history-stash)
-               (copy-seq (line-editor-text editor))
-               index
-               (1- (length history))))
-        ((plusp index)
-         (decf index)))
-      (setf (slot-value editor 'history-index) index)
-      (line-editor--set-state editor
-                              (aref history index)
-                              (length (aref history index)))))
+         (index   (slot-value editor 'history-index))
+         (query   (if index
+                      (slot-value editor 'history-stash)
+                      (line-editor-text editor)))
+         (match   (line-editor--history-matching-index
+                   editor query
+                   (if index (1- index) (1- (length history)))
+                   -1)))
+    (when match
+      (unless index
+        (setf (slot-value editor 'history-stash) (copy-seq query)
+              (slot-value editor 'history-stash-cursor)
+              (line-editor-cursor editor)))
+      (let ((entry (aref history match)))
+        (setf (slot-value editor 'history-index) match)
+        (line-editor--set-state editor entry (length entry)))))
   nil)
 
 (defun line-editor--history-next (editor)
-  "Recall the next newer history entry or restore EDITOR's saved draft."
+  "Recall the next newer match or restore EDITOR's saved draft and cursor."
   (let* ((history (slot-value editor 'history))
          (index   (slot-value editor 'history-index)))
     (when index
-      (if (< index (1- (length history)))
-          (let* ((next-index (1+ index))
-                 (entry      (aref history next-index)))
-            (setf (slot-value editor 'history-index) next-index)
-            (line-editor--set-state editor entry (length entry)))
-          (let ((draft (or (slot-value editor 'history-stash) "")))
-            (line-editor--set-state editor draft (length draft))
-            (line-editor--leave-history editor)))))
+      (let* ((draft (slot-value editor 'history-stash))
+             (next-index
+               (line-editor--history-matching-index
+                editor draft (1+ index) 1)))
+        (if next-index
+            (let ((entry (aref history next-index)))
+              (setf (slot-value editor 'history-index) next-index)
+              (line-editor--set-state editor entry (length entry)))
+            (let ((cursor (slot-value editor 'history-stash-cursor)))
+              (line-editor--set-state editor draft cursor)
+              (line-editor--leave-history editor))))))
   nil)
 
 
@@ -241,34 +274,45 @@
                            (text "")
                            (cursor (length text))
                            (history #())
-                           (history-limit +default-history-limit+))
+                           (history-limit +default-history-limit+)
+                           history-match-function)
   "Create an editor initialized with TEXT, CURSOR, and copied HISTORY.
 
-HISTORY is ordered from oldest to newest.  CURSOR is clamped to TEXT and
-advanced when necessary so that it never divides a grapheme."
+HISTORY is ordered from oldest to newest. HISTORY-MATCH-FUNCTION, when non-NIL,
+receives the fixed draft and each candidate entry during traversal. An empty
+draft always traverses every entry. CURSOR is clamped to TEXT and advanced when
+necessary so that it never divides a grapheme."
   (check-type text string)
   (unless (and (integerp history-limit) (plusp history-limit))
     (error 'type-error
            :datum history-limit
            :expected-type '(integer 1 *)))
+  (unless (or (null history-match-function)
+              (functionp history-match-function))
+    (error 'type-error
+           :datum history-match-function
+           :expected-type '(or null function)))
   (let* ((owned-text (copy-seq text))
          (safe-cursor (line-editor--normalize-cursor owned-text cursor)))
     (make-instance 'line-editor
                    :text owned-text
                    :cursor safe-cursor
                    :history (line-editor--make-history history history-limit)
-                   :history-limit history-limit)))
+                   :history-limit history-limit
+                   :history-match-function history-match-function)))
 
 (defun line-editor-create (&key
                              (text "")
                              (cursor (length text))
                              (history #())
-                             (history-limit +default-history-limit+))
+                             (history-limit +default-history-limit+)
+                             history-match-function)
   "Create a line editor through the application-oriented named constructor."
   (make-line-editor :text text
                     :cursor cursor
                     :history history
-                    :history-limit history-limit))
+                    :history-limit history-limit
+                    :history-match-function history-match-function))
 
 (defun line-editor-history (editor)
   "Return a detached oldest-to-newest snapshot of EDITOR's history."
