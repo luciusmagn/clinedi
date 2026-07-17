@@ -24,11 +24,13 @@
   (let ((stream (make-string-output-stream))
         (flushes 0)
         (writes 0)
+        (write-log (make-array 0 :adjustable t :fill-pointer 0))
         (cursor-shows 0)
         (last-write ""))
     (let* ((write-function
              (lambda (text)
                (incf writes)
+               (vector-push-extend text write-log)
                (incf cursor-shows
                      (live-region-tests--count (ansi-cursor-show) text))
                (setf last-write text)
@@ -115,6 +117,23 @@
         (check-true "live repaint never clears below"
                     (not (search (format nil "~c[J" (code-char 27))
                                  output))))
+      (let ((first-resize-write writes))
+        (live-region-resize region 12 :repaint-p nil)
+        (check-equal "deferred resize emits no intermediate frame"
+                     first-resize-write
+                     writes)
+        (live-region-present region text :cursor 5)
+        (let* ((erasure (aref write-log first-resize-write))
+               (expected-prefix
+                 (concatenate 'string
+                              (ansi-cursor-hide)
+                              (clinedi:ansi-cursor-down 2))))
+          (check-equal "wider resize retracts only reflowed rows"
+                       expected-prefix
+                       (subseq erasure 0 (length expected-prefix)))))
+      (check-equal "wider resize reflows retained presentation"
+                   3
+                   (live-region-row-count region))
       (live-region-resize region 3)
       (check-equal "resize updates live-region width"
                    3

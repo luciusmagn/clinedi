@@ -132,6 +132,10 @@ repainting the region, so appended output remains in normal scrollback.
 in one terminal write and flush for streaming applications. An optional
 `maximum-rows` keeps long multiline content inside a cursor-following viewport
 while retaining the complete presentation for later repainting.
+`live-region-resize` reconciles the painted rows with terminal reflow before
+retracting them. Pass `:repaint-p nil` when the application will immediately
+call `live-region-present`, allowing responsive content to replace the old
+frame without an intermediate repaint.
 
 Applications that manage their own presentation can use `clinedi:screen-window`
 to obtain grapheme-safe start, end, and cursor indexes for the same bounded

@@ -186,16 +186,20 @@
                   window-cursor))
         (values text display cursor))))
 
+(defun live-region--text-geometry (text cursor columns)
+  "Return end and cursor geometry for TEXT at COLUMNS."
+  (multiple-value-bind (cursor-row cursor-column cursor-wrap)
+      (screen-position text :columns columns :end cursor)
+    (declare (ignore cursor-wrap))
+    (multiple-value-bind (end-row end-column pending-wrap)
+        (screen-position text :columns columns)
+      (declare (ignore end-column))
+      (values end-row cursor-row cursor-column pending-wrap))))
+
 (defun live-region--presentation-geometry (region text cursor)
   "Return end and cursor geometry for REGION's windowed TEXT and CURSOR."
-  (let ((columns (live-region-columns region)))
-    (multiple-value-bind (cursor-row cursor-column cursor-wrap)
-        (screen-position text :columns columns :end cursor)
-      (declare (ignore cursor-wrap))
-      (multiple-value-bind (end-row end-column pending-wrap)
-          (screen-position text :columns columns)
-        (declare (ignore end-column))
-        (values end-row cursor-row cursor-column pending-wrap)))))
+  (live-region--text-geometry
+   text cursor (live-region-columns region)))
 
 (defun live-region--write-presentation
     (stream display end-row cursor-row cursor-column pending-wrap)
@@ -215,6 +219,17 @@
         (live-region-cursor-column region) cursor-column
         (live-region-visible-p region) t)
   region)
+
+(defun live-region--record-reflowed-presentation (region columns)
+  "Record REGION's painted presentation after terminal reflow to COLUMNS."
+  (multiple-value-bind (text display cursor)
+      (live-region--windowed-presentation region)
+    (declare (ignore display))
+    (multiple-value-bind (end-row cursor-row cursor-column pending-wrap)
+        (live-region--text-geometry text cursor columns)
+      (declare (ignore pending-wrap))
+      (live-region--record-presentation
+       region end-row cursor-row cursor-column))))
 
 (defun live-region--paint (region)
   "Paint REGION's retained presentation and restore its logical cursor."
@@ -406,8 +421,12 @@ last output row."
   region)
 
 (defun live-region-resize
-    (region columns &key (maximum-rows nil maximum-rows-p))
-  "Reflow REGION for COLUMNS and optional MAXIMUM-ROWS without replaying output."
+    (region columns &key (maximum-rows nil maximum-rows-p) (repaint-p t))
+  "Reflow REGION for COLUMNS and optional MAXIMUM-ROWS without replaying output.
+
+When REPAINT-P is false, record the terminal's reflowed geometry but leave the
+painted content in place. A following presentation can then replace it in one
+atomic frame."
   (check-type region live-region)
   (unless (and (integerp columns) (plusp columns))
     (error 'type-error :datum columns :expected-type '(integer 1 *)))
@@ -416,15 +435,19 @@ last output row."
                 (and (integerp maximum-rows) (plusp maximum-rows)))
       (error 'type-error :datum maximum-rows
                          :expected-type '(or null (integer 1 *)))))
+  (check-type repaint-p boolean)
   (unless (and (= columns (live-region-columns region))
                (or (not maximum-rows-p)
                    (eql maximum-rows (live-region-maximum-rows region))))
-    (let ((visible-p (live-region-visible-p region)))
+    (let ((visible-p (live-region-visible-p region))
+          (text (live-region--text region))
+          (display (live-region--display region))
+          (cursor (live-region--cursor region)))
       (when visible-p
-        (live-region-suspend region))
+        (live-region--record-reflowed-presentation region columns))
       (setf (live-region-columns region) columns)
       (when maximum-rows-p
         (setf (live-region-maximum-rows region) maximum-rows))
-      (when visible-p
-        (live-region-resume region))))
+      (when (and visible-p repaint-p)
+        (live-region--replace region text display cursor "" ""))))
   region)
