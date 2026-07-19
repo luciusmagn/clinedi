@@ -351,6 +351,7 @@
                  (completion-arrangement :grid)
                  suggestion-function
                  (keymap (default-line-editor-keymap))
+                 (keyboard-enhancement-p t)
                  (bracketed-paste-p t))
   "Edit one line under PROMPT and return line and result kind.
 
@@ -370,6 +371,10 @@ COMPLETION-ARRANGEMENT is :GRID for a width-measured row-major selector or
 navigate, Tab and Shift-Tab cycle forward and backward, Escape restores the
 uncompleted text, and other input keeps the selected completion before
 applying that input.
+
+KEYBOARD-ENHANCEMENT-P requests CSI-u and modifyOtherKeys reporting while raw
+mode is active, allowing modified Enter and other modified keys to remain
+distinguishable from their unmodified forms.
 
 When raw mode is unavailable, this function prints the final prompt line and
 uses ordinary READ-LINE."
@@ -401,6 +406,8 @@ uses ordinary READ-LINE."
                  (return-from edit-line
                    (terminal-editor--fallback
                     editable-prompt input-stream output-stream)))
+               (when keyboard-enhancement-p
+                 (enable-keyboard-enhancement :stream output-stream))
                (when bracketed-paste-p
                  (format output-stream "~c[?2004h" +escape-character+))
                (setf previous-row
@@ -570,5 +577,7 @@ uses ordinary READ-LINE."
           (when raw-p
             (when bracketed-paste-p
               (format output-stream "~c[?2004l" +escape-character+)
-              (force-output output-stream)))
+              (force-output output-stream))
+            (when keyboard-enhancement-p
+              (disable-keyboard-enhancement :stream output-stream)))
           (funcall restore-function))))))

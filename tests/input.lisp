@@ -60,14 +60,15 @@
                 (concatenate 'string
                              (string (code-char 27))
                              (string #\return))))
-  (check-equal "CSI-u shift-enter event"
-               :insert-newline
-               (input-test--event
-                (input-test--escape-sequence "[13;2u")))
-  (check-equal "modify-other-keys alt-enter event"
-               :insert-newline
-               (input-test--event
-                (input-test--escape-sequence "[27;3;13~")))
+  (dolist (case '(("CSI-u shift-enter event" "[13;2u")
+                  ("CSI-u control-enter event" "[13;5u")
+                  ("modify-other-keys shift-enter event" "[27;2;13~")
+                  ("modify-other-keys alt-enter event" "[27;3;13~")
+                  ("modify-other-keys control-enter event" "[27;5;13~")))
+    (check-equal (first case)
+                 :insert-newline
+                 (input-test--event
+                  (input-test--escape-sequence (second case)))))
   (dolist (case '(("CSI-u control-backspace with BS" "[8;5u")
                   ("CSI-u control-backspace with DEL" "[127;5u")
                   ("modify-other-keys control-backspace with BS" "[27;5;8~")

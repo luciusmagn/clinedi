@@ -59,6 +59,20 @@
     (check-equal "raw editor submit kind" :line kind)
     (check-true "raw editor renders entered text" (search "abc" output))
     (check-equal "raw editor restores terminal" 1 restores))
+  (multiple-value-bind (line kind output restores)
+      (terminal-editor-test--read
+       (format nil "first~c[13;2usecond~%" (code-char 27))
+       :raw-mode-function (lambda () t)
+       :bracketed-paste-p nil)
+    (declare (ignore restores))
+    (check-equal "enhanced shift-enter inserts a logical line"
+                 (format nil "first~%second")
+                 line)
+    (check-equal "enhanced multiline input still submits" :line kind)
+    (check-true "raw editor enables keyboard enhancement"
+                (search (format nil "~c[>1u" (code-char 27)) output))
+    (check-true "raw editor restores keyboard reporting"
+                (search (format nil "~c[<u" (code-char 27)) output)))
   (let ((size-calls 0)
         (restores 0))
     (flet ((changing-size ()

@@ -2,6 +2,35 @@
 
 (in-package #:clinedi)
 
+(defparameter *keyboard-enhancement-enable-sequence*
+  (format nil "~c[>4;0m~c[>1u~c[>4;2m"
+          +escape-character+
+          +escape-character+
+          +escape-character+)
+  "Terminal controls enabling modified-key reports through supported protocols.")
+
+(defparameter *keyboard-enhancement-disable-sequence*
+  (format nil "~c[<u~c[>4;0m"
+          +escape-character+
+          +escape-character+)
+  "Terminal controls restoring ordinary key reports after enhanced input.")
+
+(defun enable-keyboard-enhancement (&key (stream *standard-output*))
+  "Request distinguishable modified-key reports on STREAM.
+
+Kitty keyboard disambiguation and xterm modifyOtherKeys level two are requested
+together. Unsupported controls are ignored by conforming terminals. Calls must
+be balanced with DISABLE-KEYBOARD-ENHANCEMENT while the same terminal is owned."
+  (write-string *keyboard-enhancement-enable-sequence* stream)
+  (force-output stream)
+  (values))
+
+(defun disable-keyboard-enhancement (&key (stream *standard-output*))
+  "Restore ordinary keyboard reporting on STREAM."
+  (write-string *keyboard-enhancement-disable-sequence* stream)
+  (force-output stream)
+  (values))
+
 (defparameter *bracketed-paste-end*
   (concatenate 'string (string +escape-character+) "[201~")
   "Terminal sequence ending a bracketed paste payload.")
@@ -49,8 +78,11 @@
         ((member body '("1~" "7~") :test #'string=) :home)
         ((string= body "3~") :delete)
         ((member body '("4~" "8~") :test #'string=) :end)
-        ((member body '("13;2u" "13;3u" "13;4u"
-                        "27;2;13~" "27;3;13~" "27;4;13~")
+        ((member body '("13;2u" "13;3u" "13;4u" "13;5u"
+                        "13;6u" "13;7u" "13;8u"
+                        "27;2;13~" "27;3;13~" "27;4;13~"
+                        "27;5;13~" "27;6;13~" "27;7;13~"
+                        "27;8;13~")
                  :test #'string=)
          :insert-newline)
         ((member body '("8;5u" "127;5u"

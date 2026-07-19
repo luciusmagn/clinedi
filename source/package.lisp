@@ -78,6 +78,8 @@
    #:selector-handle-event
 
    ;; Input and layout
+   #:enable-keyboard-enhancement
+   #:disable-keyboard-enhancement
    #:read-event
    #:screen-position
    #:screen-window
