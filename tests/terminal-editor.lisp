@@ -156,6 +156,17 @@
     (check-equal "Up recalls the newest matching history entry"
                  "git log --oneline" line)
     (check-equal "filtered history fallback remains submittable" :line kind))
+  (let ((keymap (default-line-editor-keymap)))
+    (keymap-bind keymap :up :left)
+    (multiple-value-bind (line kind output restores)
+        (terminal-editor-test--read
+         (format nil "ab~c[A!~%" (code-char 27))
+         :keymap keymap
+         :raw-mode-function (lambda () t)
+         :bracketed-paste-p nil)
+      (declare (ignore output restores))
+      (check-equal "remapped Up bypasses vertical movement" "a!b" line)
+      (check-equal "remapped vertical input remains submittable" :line kind)))
   (multiple-value-bind (line kind output restores)
       (terminal-editor-test--read
        "partial"
@@ -248,6 +259,25 @@
       (declare (ignore output restores))
       (check-equal "Escape restores text preceding completion" "pri" line)
       (check-equal "restored completion text remains submittable" :line kind)))
+  (let ((keymap (default-line-editor-keymap)))
+    (keymap-bind keymap :right :complete-previous)
+    (multiple-value-bind (line kind output restores)
+        (terminal-editor-test--read
+         (format nil "pri~c~c[C~%" #\tab (code-char 27))
+         :keymap keymap
+         :raw-mode-function (lambda () t)
+         :bracketed-paste-p nil
+         :completion-function
+         (lambda (text cursor)
+           (declare (ignore text))
+           (values (- cursor 3) '("print" "printf" "private")))
+         :completion-accept-function
+         (lambda (candidate)
+           (concatenate 'string candidate " ")))
+      (declare (ignore output restores))
+      (check-equal "completion selector honors a remapped Right command"
+                   "private " line)
+      (check-equal "remapped completion remains submittable" :line kind)))
   (let ((source-history (vector "older"))
         (callback-histories nil))
     (multiple-value-bind (line kind output restores)
@@ -270,4 +300,20 @@
                             callback-histories)))
     (check-true "suggestion callback cannot mutate caller history"
                 (not (eq source-history (first callback-histories)))))
+  (let ((keymap (default-line-editor-keymap)))
+    (keymap-bind keymap :right :left)
+    (multiple-value-bind (line kind output restores)
+        (terminal-editor-test--read
+         (format nil "a~c[C!~%" (code-char 27))
+         :keymap keymap
+         :raw-mode-function (lambda () t)
+         :bracketed-paste-p nil
+         :suggestion-function
+         (lambda (text history)
+           (declare (ignore history))
+           (and (string= text "a") "abc")))
+      (declare (ignore output restores))
+      (check-equal "suggestion acceptance honors a remapped Right command"
+                   "!a" line)
+      (check-equal "remapped suggestion input remains submittable" :line kind)))
   (values))

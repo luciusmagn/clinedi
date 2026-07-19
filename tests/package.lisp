@@ -22,15 +22,26 @@
                 #:ansi-clear-line-right
                 #:ansi-strip
                 #:ansi-display-width
+                #:make-keymap
+                #:copy-keymap
+                #:keymap-parent
+                #:keymap-bindings
+                #:keymap-bind
+                #:keymap-unbind
+                #:keymap-lookup
+                #:default-line-editor-keymap
                 #:make-line-editor
                 #:line-editor-create
                 #:line-editor-text
                 #:line-editor-cursor
                 #:line-editor-history
                 #:line-editor-history-match-function
+                #:line-editor-keymap
                 #:line-editor-set-text
                 #:line-editor-clear
                 #:line-editor-add-history
+                #:line-editor-command-for-event
+                #:line-editor-execute-command
                 #:line-editor-handle-event
                 #:line-editor-move-vertical
                 #:line-editor-render

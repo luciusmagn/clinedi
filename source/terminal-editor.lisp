@@ -220,12 +220,12 @@
     (declare (ignore editor-column pending-wrap))
     (max 1 (- terminal-rows (1+ editor-row)))))
 
-(defun terminal-completion--handle-event (editor session event)
-  "Handle EVENT in SESSION and return the next session and forwarding flag."
+(defun terminal-completion--handle-command (editor session command)
+  "Handle resolved COMMAND in SESSION and return session and forwarding flag."
   (multiple-value-bind (action candidate)
       (selector-handle-event
        (terminal-completion-session-selector session)
-       event)
+       command)
     (case action
       (:changed
        (terminal-completion--preview editor session candidate)
@@ -235,7 +235,7 @@
        (values nil t))
       (:cancel
        (terminal-completion--restore editor session)
-       (values nil (not (eq event :escape))))
+       (values nil (not (eq command :escape))))
       (:unhandled
        (values session t)))))
 
@@ -350,6 +350,7 @@
                  (completion-accept-function #'identity)
                  (completion-arrangement :grid)
                  suggestion-function
+                 (keymap (default-line-editor-keymap))
                  (bracketed-paste-p t))
   "Edit one line under PROMPT and return line and result kind.
 
@@ -360,6 +361,8 @@ An empty draft always traverses all entries. Terminal ownership remains with
 the caller through size, raw-mode and restore callbacks. Highlighting,
 completion and suggestion callbacks add application policy without coupling
 Clinedi to a parser or history store.
+KEYMAP supplies programmable event-to-command bindings to the incremental
+editor and is retained for the duration of this call.
 The size callback is refreshed between redraws and input events so a resized
 terminal can reflow the last visible frame without displacing the cursor.
 COMPLETION-ARRANGEMENT is :GRID for a width-measured row-major selector or
@@ -382,7 +385,8 @@ uses ordinary READ-LINE."
             columns (max 1 columns))
       (let ((editor (make-line-editor
                      :history history
-                     :history-match-function history-match-function))
+                     :history-match-function history-match-function
+                     :keymap keymap))
             (prompt-width (ansi-display-width editable-prompt))
             (previous-row 0)
             (rendered-text "")
@@ -428,8 +432,8 @@ uses ordinary READ-LINE."
                                 (copy-seq (line-editor-text editor))
                                 rendered-cursor
                                 (line-editor-cursor editor)))
-                        (vertical-event (event)
-                          (case event
+                        (vertical-command (command)
+                          (case command
                             (:up
                              (unless (line-editor-move-vertical
                                       editor -1
@@ -443,13 +447,14 @@ uses ordinary READ-LINE."
                                       :prompt-width prompt-width)
                                ':history-next))
                             (t
-                             event)))
-                        (handle-editor-event (event)
-                          (let ((effective-event (vertical-event event)))
-                            (when effective-event
+                             command)))
+                        (handle-editor-command (event command)
+                          (let ((effective-command
+                                  (vertical-command command)))
+                            (when effective-command
                               (multiple-value-bind (action payload)
-                                  (line-editor-handle-event
-                                   editor effective-event)
+                                  (line-editor-execute-command
+                                   editor effective-command event)
                                 (case action
                                   ((:submit :interrupt :end-of-input)
                                    (return-from edit-line
@@ -539,21 +544,29 @@ uses ordinary READ-LINE."
                        (refresh-terminal-size)
                        (cond ((eq event :ignore)
                               nil)
-                             (completion
-                              (multiple-value-bind
-                                    (next-completion forward-event-p)
-                                  (terminal-completion--handle-event
-                                   editor completion event)
-                                (setf completion next-completion)
-                                (when forward-event-p
-                                  (handle-editor-event event))))
-                             ((and (eq event :right) suggestion
-                                   (= (line-editor-cursor editor)
-                                      (length (line-editor-text editor))))
-                              (line-editor-set-text
-                               editor suggestion :cursor (length suggestion)))
                              (t
-                              (handle-editor-event event))))))))
+                              (let ((command
+                                      (line-editor-command-for-event
+                                       editor event)))
+                                (cond
+                                  (completion
+                                   (multiple-value-bind
+                                         (next-completion forward-command-p)
+                                       (terminal-completion--handle-command
+                                        editor completion command)
+                                     (setf completion next-completion)
+                                     (when forward-command-p
+                                       (handle-editor-command event command))))
+                                  ((and (eq command :right) suggestion
+                                        (= (line-editor-cursor editor)
+                                           (length
+                                            (line-editor-text editor))))
+                                   (line-editor-set-text
+                                    editor suggestion
+                                    :cursor (length suggestion)))
+                                  (t
+                                   (handle-editor-command
+                                    event command)))))))))))
           (when raw-p
             (when bracketed-paste-p
               (format output-stream "~c[?2004l" +escape-character+)

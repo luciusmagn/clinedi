@@ -32,6 +32,17 @@
    #:ansi-strip
    #:ansi-display-width
 
+   ;; Programmable keymaps
+   #:keymap
+   #:make-keymap
+   #:copy-keymap
+   #:keymap-parent
+   #:keymap-bindings
+   #:keymap-bind
+   #:keymap-unbind
+   #:keymap-lookup
+   #:default-line-editor-keymap
+
    ;; Incremental editing
    #:line-editor
    #:make-line-editor
@@ -41,9 +52,12 @@
    #:line-editor-history
    #:line-editor-history-limit
    #:line-editor-history-match-function
+   #:line-editor-keymap
    #:line-editor-set-text
    #:line-editor-clear
    #:line-editor-add-history
+   #:line-editor-command-for-event
+   #:line-editor-execute-command
    #:line-editor-handle-event
    #:line-editor-move-vertical
    #:line-editor-render

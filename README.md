@@ -55,6 +55,38 @@ events. The function receives the complete draft captured when traversal begins
 and each candidate entry. Down past the newest match restores that draft and
 its original cursor; an empty draft always traverses every entry.
 
+## Programmable keymaps
+
+Clinedi decodes terminal input into semantic events, then resolves each event
+through the editor's keymap. `default-line-editor-keymap` returns a fresh map
+with the standard behavior, so an application can customize its own copy
+without changing other editors:
+
+```lisp
+(defparameter *application-keymap*
+  (clinedi:default-line-editor-keymap))
+
+;; Give Up and Down unconditional history behavior.
+(clinedi:keymap-bind *application-keymap* :up :history-previous)
+(clinedi:keymap-bind *application-keymap* :down :history-next)
+
+(clinedi:edit-line "> " :keymap *application-keymap*)
+```
+
+A binding maps an event to a built-in semantic command, a function, or a
+non-keyword fbound symbol. Custom commands receive the editor and the original
+event, and return the same action and optional payload pair as
+`line-editor-handle-event`. They can call `line-editor-execute-command` to reuse
+built-in behavior. `line-editor-command-for-event` exposes resolution separately
+for event loops that need to inspect a command before executing it.
+
+Keymaps support parent fallback. For a compound event such as
+`(:insert "x")`, lookup checks that exact event, then `:insert`, before moving
+to the parent. `keymap-unbind` removes a local binding and reveals its parent;
+binding an event to `nil` masks the parent. `copy-keymap` copies every map and
+binding table in the parent chain, while `keymap-bindings` returns a detached
+snapshot of one map's local entries.
+
 ## Candidate selection
 
 `clinedi:selector` is application-neutral navigation and viewport state for
@@ -84,7 +116,9 @@ raw mode, terminal size, completion, highlighting and suggestions to callbacks.
 This keeps terminal policy and application semantics outside the library. The
 terminal-size callback is refreshed while input is active, so wrapped text,
 ghost suggestions and completion layouts follow terminal resizes without
-losing the input cursor.
+losing the input cursor. Pass `:keymap` to customize command dispatch. Resolved
+commands also control vertical movement, completion navigation and suggestion
+acceptance, so remapped events behave consistently throughout the frontend.
 
 Ambiguous completions open a live selector below the edited text. The default
 `:completion-arrangement :grid` fits as many measured columns as the terminal

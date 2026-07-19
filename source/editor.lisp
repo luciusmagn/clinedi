@@ -16,6 +16,12 @@
     :reader line-editor-cursor
     :type integer
     :documentation "Grapheme boundary in TEXT at which editing occurs.")
+   (keymap
+    :initarg :keymap
+    :initform (default-line-editor-keymap)
+    :reader line-editor-keymap
+    :type keymap
+    :documentation "Programmable event-to-command mappings for this editor.")
    (history
     :initarg :history
     :type vector
@@ -275,13 +281,15 @@
                            (cursor (length text))
                            (history #())
                            (history-limit +default-history-limit+)
-                           history-match-function)
+                           history-match-function
+                           (keymap (default-line-editor-keymap)))
   "Create an editor initialized with TEXT, CURSOR, and copied HISTORY.
 
 HISTORY is ordered from oldest to newest. HISTORY-MATCH-FUNCTION, when non-NIL,
 receives the fixed draft and each candidate entry during traversal. An empty
 draft always traverses every entry. CURSOR is clamped to TEXT and advanced when
-necessary so that it never divides a grapheme."
+necessary so that it never divides a grapheme. KEYMAP controls semantic event
+dispatch and is retained so callers can update it deliberately."
   (check-type text string)
   (unless (and (integerp history-limit) (plusp history-limit))
     (error 'type-error
@@ -292,11 +300,13 @@ necessary so that it never divides a grapheme."
     (error 'type-error
            :datum history-match-function
            :expected-type '(or null function)))
+  (check-type keymap keymap)
   (let* ((owned-text (copy-seq text))
          (safe-cursor (line-editor--normalize-cursor owned-text cursor)))
     (make-instance 'line-editor
                    :text owned-text
                    :cursor safe-cursor
+                   :keymap keymap
                    :history (line-editor--make-history history history-limit)
                    :history-limit history-limit
                    :history-match-function history-match-function)))
@@ -306,13 +316,15 @@ necessary so that it never divides a grapheme."
                              (cursor (length text))
                              (history #())
                              (history-limit +default-history-limit+)
-                             history-match-function)
+                             history-match-function
+                             (keymap (default-line-editor-keymap)))
   "Create a line editor through the application-oriented named constructor."
   (make-line-editor :text text
                     :cursor cursor
                     :history history
                     :history-limit history-limit
-                    :history-match-function history-match-function))
+                    :history-match-function history-match-function
+                    :keymap keymap))
 
 (defun line-editor-history (editor)
   "Return a detached oldest-to-newest snapshot of EDITOR's history."
@@ -344,126 +356,184 @@ necessary so that it never divides a grapheme."
   (line-editor--leave-history editor)
   editor)
 
-(defun line-editor-handle-event (editor event)
-  "Apply semantic EVENT to EDITOR and return an action and optional payload.
+(defun line-editor--text-event-p (event kind)
+  "Return true when EVENT carries one string for compound event KIND."
+  (and (consp event)
+       (eq (first event) kind)
+       (consp (rest event))
+       (null (rest (rest event)))
+       (stringp (second event))))
 
-Editing events return (VALUES :CONTINUE NIL).  Submission returns the full
-line as its payload and clears the buffer.  UI actions such as completion are
-returned to the caller without modifying the buffer. :UP and :DOWN are returned
-for layout-aware vertical movement. :END-OF-INPUT applies Ctrl-D semantics.
+(defun line-editor--require-event-text (event kind)
+  "Return the text carried by EVENT, requiring compound event KIND."
+  (unless (line-editor--text-event-p event kind)
+    (error 'type-error
+           :datum event
+           :expected-type `(cons (eql ,kind) (cons string null))))
+  (second event))
+
+(defun line-editor--continue-action ()
+  "Return the standard action for an editing command that remains active."
+  (values :continue nil))
+
+(defun line-editor-command-for-event (editor event)
+  "Return EDITOR's command for EVENT and whether a binding was found.
+
+Exact compound-event bindings take precedence over bindings for their event
+head. The editor's keymap parent chain supplies fallback bindings."
+  (check-type editor line-editor)
+  (keymap-lookup (line-editor-keymap editor) event))
+
+(defun line-editor-execute-command (editor command event)
+  "Execute COMMAND for original EVENT in EDITOR and return action and payload.
+
+Standard keyword commands implement Clinedi editing behavior. A function or a
+non-keyword fbound symbol is called with EDITOR and EVENT and controls both
+return values. NIL and :IGNORED are no-op commands returning :IGNORED."
+  (check-type editor line-editor)
+  (cond
+    ((null command)
+     (values :ignored nil))
+    ((functionp command)
+     (funcall command editor event))
+    ((and (symbolp command)
+          (not (keywordp command)))
+     (unless (fboundp command)
+       (error 'undefined-function :name command))
+     (funcall command editor event))
+    ((keywordp command)
+     (case command
+       (:insert
+        (line-editor--insert
+         editor (line-editor--require-event-text event :insert))
+        (line-editor--continue-action))
+       (:paste
+        (line-editor--insert
+         editor (line-editor--require-event-text event :paste))
+        (line-editor--continue-action))
+       (:insert-newline
+        (line-editor--insert editor (string #\newline))
+        (line-editor--continue-action))
+       (:line
+        (line-editor-set-text
+         editor (line-editor--require-event-text event :line))
+        (line-editor-execute-command editor :submit event))
+       (:left
+        (when (plusp (line-editor-cursor editor))
+          (line-editor--set-cursor
+           editor
+           (grapheme-previous-boundary
+            (line-editor-text editor)
+            (line-editor-cursor editor))))
+        (line-editor--continue-action))
+       (:right
+        (when (< (line-editor-cursor editor)
+                 (length (line-editor-text editor)))
+          (line-editor--set-cursor
+           editor
+           (grapheme-next-boundary
+            (line-editor-text editor)
+            (line-editor-cursor editor))))
+        (line-editor--continue-action))
+       (:word-left
+        (line-editor--set-cursor
+         editor
+         (line-editor--word-start (line-editor-text editor)
+                                  (line-editor-cursor editor)))
+        (line-editor--continue-action))
+       (:word-right
+        (line-editor--set-cursor
+         editor
+         (line-editor--word-end (line-editor-text editor)
+                                (line-editor-cursor editor)))
+        (line-editor--continue-action))
+       (:home
+        (line-editor--set-cursor editor 0)
+        (line-editor--continue-action))
+       (:end
+        (line-editor--set-cursor editor (length (line-editor-text editor)))
+        (line-editor--continue-action))
+       (:backspace
+        (line-editor--delete-backward editor)
+        (line-editor--continue-action))
+       (:delete
+        (line-editor--delete-forward editor)
+        (line-editor--continue-action))
+       (:history-previous
+        (line-editor--history-previous editor)
+        (line-editor--continue-action))
+       (:history-next
+        (line-editor--history-next editor)
+        (line-editor--continue-action))
+       (:kill-to-end
+        (line-editor--kill-to-end editor)
+        (line-editor--continue-action))
+       (:kill-line
+        (line-editor-clear editor)
+        (line-editor--continue-action))
+       (:kill-word
+        (line-editor--kill-word editor)
+        (line-editor--continue-action))
+       (:complete
+        (values :complete nil))
+       (:complete-previous
+        (values :complete-previous nil))
+       (:up
+        (values :up nil))
+       (:down
+        (values :down nil))
+       (:submit
+        (let ((submitted (copy-seq (line-editor-text editor))))
+          (line-editor-add-history editor submitted)
+          (line-editor-clear editor)
+          (values :submit submitted)))
+       (:interrupt
+        (values :interrupt nil))
+       (:end-of-input
+        (cond
+          ((zerop (length (line-editor-text editor)))
+           (values :end-of-input nil))
+          ((< (line-editor-cursor editor)
+              (length (line-editor-text editor)))
+           (line-editor--delete-forward editor)
+           (line-editor--continue-action))
+          (t
+           (line-editor--continue-action))))
+       (:stream-end
+        (values :end-of-input nil))
+       (:escape
+        (values :escape nil))
+       (:clear-screen
+        (values :clear-screen nil))
+       ((:ignore :ignored)
+        (values :ignored nil))
+       (otherwise
+        (error 'type-error
+               :datum command
+               :expected-type '(member
+                                :insert :paste :insert-newline :line
+                                :left :right :word-left :word-right :home :end
+                                :backspace :delete :history-previous :history-next
+                                :kill-to-end :kill-line :kill-word
+                                :complete :complete-previous :up :down :submit
+                                :interrupt :end-of-input :stream-end :escape
+                                :clear-screen :ignore :ignored)))))
+    (t
+     (error 'type-error
+            :datum command
+            :expected-type '(or function symbol)))))
+
+(defun line-editor-handle-event (editor event)
+  "Resolve and apply semantic EVENT, returning an action and optional payload.
+
+Editing commands return (VALUES :CONTINUE NIL). Submission returns the full
+line as its payload and clears the buffer. UI commands such as completion are
+returned to the caller without modifying the buffer. :UP and :DOWN support
+layout-aware vertical movement. :END-OF-INPUT applies Ctrl-D semantics, while
 :STREAM-END returns the :END-OF-INPUT action without clearing buffered text."
   (check-type editor line-editor)
-  (labels ((continue-action ()
-             (values :continue nil))
-
-           (text-event-p (kind)
-             (and (consp event)
-                  (eq (first event) kind)
-                  (consp (rest event))
-                  (null (rest (rest event)))
-                  (stringp (second event)))))
-    (cond
-      ((text-event-p :insert)
-       (line-editor--insert editor (second event))
-       (continue-action))
-      ((text-event-p :paste)
-       (line-editor--insert editor (second event))
-       (continue-action))
-      ((eq event :insert-newline)
-       (line-editor--insert editor (string #\newline))
-       (continue-action))
-      ((text-event-p :line)
-       (line-editor-set-text editor (second event))
-       (line-editor-handle-event editor :submit))
-      ((eq event :left)
-       (when (plusp (line-editor-cursor editor))
-         (line-editor--set-cursor
-          editor
-          (grapheme-previous-boundary
-           (line-editor-text editor)
-           (line-editor-cursor editor))))
-       (continue-action))
-      ((eq event :right)
-       (when (< (line-editor-cursor editor)
-                (length (line-editor-text editor)))
-         (line-editor--set-cursor
-          editor
-          (grapheme-next-boundary
-           (line-editor-text editor)
-           (line-editor-cursor editor))))
-       (continue-action))
-      ((eq event :word-left)
-       (line-editor--set-cursor
-        editor
-        (line-editor--word-start (line-editor-text editor)
-                                 (line-editor-cursor editor)))
-       (continue-action))
-      ((eq event :word-right)
-       (line-editor--set-cursor
-        editor
-        (line-editor--word-end (line-editor-text editor)
-                               (line-editor-cursor editor)))
-       (continue-action))
-      ((eq event :home)
-       (line-editor--set-cursor editor 0)
-       (continue-action))
-      ((eq event :end)
-       (line-editor--set-cursor editor (length (line-editor-text editor)))
-       (continue-action))
-      ((eq event :backspace)
-       (line-editor--delete-backward editor)
-       (continue-action))
-      ((eq event :delete)
-       (line-editor--delete-forward editor)
-       (continue-action))
-      ((eq event :history-previous)
-       (line-editor--history-previous editor)
-       (continue-action))
-      ((eq event :history-next)
-       (line-editor--history-next editor)
-       (continue-action))
-      ((eq event :kill-to-end)
-       (line-editor--kill-to-end editor)
-       (continue-action))
-      ((eq event :kill-line)
-       (line-editor-clear editor)
-       (continue-action))
-      ((eq event :kill-word)
-       (line-editor--kill-word editor)
-       (continue-action))
-      ((eq event :complete)
-       (values :complete nil))
-      ((eq event :complete-previous)
-       (values :complete-previous nil))
-      ((eq event :up)
-       (values :up nil))
-      ((eq event :down)
-       (values :down nil))
-      ((eq event :submit)
-       (let ((submitted (copy-seq (line-editor-text editor))))
-         (line-editor-add-history editor submitted)
-         (line-editor-clear editor)
-         (values :submit submitted)))
-      ((eq event :interrupt)
-       (values :interrupt nil))
-      ((eq event :end-of-input)
-       (cond
-         ((zerop (length (line-editor-text editor)))
-          (values :end-of-input nil))
-         ((< (line-editor-cursor editor)
-             (length (line-editor-text editor)))
-          (line-editor--delete-forward editor)
-          (continue-action))
-         (t
-          (continue-action))))
-      ((eq event :stream-end)
-       (values :end-of-input nil))
-      ((eq event :escape)
-       (values :escape nil))
-      ((eq event :clear-screen)
-       (values :clear-screen nil))
-      (t
-       (values :ignored nil)))))
+  (line-editor-execute-command
+   editor (line-editor-command-for-event editor event) event))
 
 (defun line-editor-render (editor &key suggestion)
   "Return EDITOR's display text and its cursor's terminal cell offset.

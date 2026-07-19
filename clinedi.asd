@@ -10,6 +10,7 @@
                 ((:file "package")
                  (:file "unicode")
                  (:file "ansi")
+                 (:file "keymap")
                  (:file "editor")
                  (:file "selector")
                  (:file "input")
