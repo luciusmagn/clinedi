@@ -174,6 +174,17 @@
                   (live-region-visible-p region))
       (let ((styled (ansi-colorize text :green)))
         (live-region-present region text :cursor 0 :display styled))
+      (let ((styled
+              (cl-colorist:paint
+               text
+               :foreground (cl-colorist:indexed-color 114 :fallback :green)
+               :background (cl-colorist:indexed-color 236 :fallback :black)
+               :level :indexed)))
+        (live-region-present region text :cursor 0 :display styled)
+        (check-true "live region accepts indexed foreground and background"
+                    (search (format nil "~c[38;5;114;48;5;236m"
+                                    (code-char 27))
+                            last-write)))
       (check-true "visible-content mismatch is rejected"
                   (live-region-tests--signals-error-p
                    (lambda ()

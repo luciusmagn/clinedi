@@ -4,6 +4,7 @@
   :license "Private"
   :description "A portable, Unicode-aware terminal line editor"
   :encoding :utf-8
+  :depends-on ("cl-colorist")
   :components ((:module "source"
                 :serial t
                 :components

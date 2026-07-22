@@ -8,42 +8,27 @@
 (defvar *presentation-enabled* t
   "Whether ANSI presentation helpers may emit terminal control sequences.")
 
-(defparameter *ansi-color-codes*
-  '((:black          . 30)
-    (:red            . 31)
-    (:green          . 32)
-    (:yellow         . 33)
-    (:blue           . 34)
-    (:magenta        . 35)
-    (:cyan           . 36)
-    (:white          . 37)
-    (:bright-black   . 90)
-    (:bright-red     . 91)
-    (:bright-green   . 92)
-    (:bright-yellow  . 93)
-    (:bright-blue    . 94)
-    (:bright-magenta . 95)
-    (:bright-cyan    . 96)
-    (:bright-white   . 97))
-  "Mapping from color keywords to standard SGR color codes.")
-
-(defun ansi-color-code (color)
-  "Return the SGR code for COLOR, defaulting to white."
-  (or (cdr (assoc color *ansi-color-codes*)) 37))
+(defun ansi--color-designator (color)
+  "Return COLOR when Colorist recognizes it, otherwise basic white."
+  (if (or (cl-colorist:color-p color)
+          (member color (cl-colorist:basic-color-names)))
+      color
+      :white))
 
 (defun ansi-colorize (text color &key bold)
   "Wrap TEXT in the SGR sequence for COLOR, optionally BOLD.
 Return TEXT unchanged when presentation is disabled."
   (if *presentation-enabled*
-      (format nil "~c[~:[~;1;~]~dm~a~c[0m"
-              +escape-character+ bold (ansi-color-code color) text
-              +escape-character+)
+      (cl-colorist:paint text
+                         :foreground (ansi--color-designator color)
+                         :bold bold
+                         :level :indexed)
       text))
 
 (defun ansi-reverse-video (text)
   "Wrap TEXT in reverse video, unless presentation is disabled."
   (if *presentation-enabled*
-      (format nil "~c[7m~a~c[0m" +escape-character+ text +escape-character+)
+      (cl-colorist:paint text :reverse t :level :basic)
       text))
 
 (defun ansi-cursor-up (lines)
@@ -94,50 +79,9 @@ Return TEXT unchanged when presentation is disabled."
       (format nil "~c[H~c[2J" +escape-character+ +escape-character+)
       ""))
 
-(defun ansi--skip-csi (string start)
-  "Return the index just past a CSI sequence body starting at START."
-  (loop for index from start below (length string)
-        for code = (char-code (char string index))
-        when (<= #x40 code #x7e)
-          return (1+ index)
-        finally (return (length string))))
-
-(defun ansi--skip-osc (string start)
-  "Return the index just past an OSC sequence body starting at START."
-  (loop for index from start below (length string)
-        for character = (char string index)
-        when (char= character (code-char 7))
-          return (1+ index)
-        when (and (char= character +escape-character+)
-                  (< (1+ index) (length string))
-                  (char= (char string (1+ index)) #\\))
-          return (+ index 2)
-        finally (return (length string))))
-
-(defun ansi--escape-end (string index)
-  "Return the index just after STRING's escape sequence at INDEX."
-  (if (< (1+ index) (length string))
-      (case (char string (1+ index))
-        (#\[ (ansi--skip-csi string (+ index 2)))
-        (#\] (ansi--skip-osc string (+ index 2)))
-        (t (+ index 2)))
-      (1+ index)))
-
 (defun ansi-strip (string)
-  "Remove ANSI CSI, OSC and two-byte escape sequences from STRING."
-  (with-output-to-string (clean)
-    (let ((index 0)
-          (length (length string)))
-      (loop while (< index length)
-            do (let ((character (char string index)))
-                 (cond ((and (char= character +escape-character+)
-                             (< (1+ index) length))
-                        (setf index (ansi--escape-end string index)))
-                       ((char= character +escape-character+)
-                        (incf index))
-                       (t
-                        (write-char character clean)
-                        (incf index))))))))
+  "Remove ANSI control sequences from STRING."
+  (cl-colorist:strip-ansi string))
 
 (defun ansi--visible-slice (string start end)
   "Return STRING controls and visible characters between START and END.
@@ -148,12 +92,11 @@ presentation state as STRING. START and END index ANSI-stripped characters."
     (let ((index 0)
           (visible-index 0))
       (loop while (< index (length string))
-            do (if (char= (char string index) +escape-character+)
-                   (let ((sequence-end (ansi--escape-end string index)))
-                     (write-string string slice
-                                          :start index
-                                          :end sequence-end)
-                     (setf index sequence-end))
+            for control-end = (cl-colorist:ansi-control-end string index)
+            do (if control-end
+                   (progn
+                     (write-string string slice :start index :end control-end)
+                     (setf index control-end))
                    (progn
                      (when (<= start visible-index (1- end))
                        (write-char (char string index) slice))

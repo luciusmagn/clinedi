@@ -12,7 +12,9 @@ completion policy and history persistence remain the application's concern.
 
 ## Loading
 
-Clinedi is an ASDF system and has no third-party dependencies.
+Clinedi is an ASDF system. It uses
+[cl-colorist](https://github.com/luciusmagn/cl-colorist) for ANSI text styling
+and control-sequence parsing.
 
 ```lisp
 (ql:quickload :clinedi)
@@ -169,8 +171,10 @@ visibility.
 
 `live-region-present` accepts separate plain geometry text and trusted ANSI
 display text when an application owns styling. Their visible contents must be
-identical. `live-region-append` always leaves the cursor on a fresh line before
-repainting the region, so appended output remains in normal scrollback.
+identical. The display may use Colorist's basic or indexed foreground and
+background colors. `live-region-append` always leaves the cursor on a fresh
+line before repainting the region, so appended output remains in normal
+scrollback.
 `live-region-append-and-present` performs that append and a replacement repaint
 in one terminal write and flush for streaming applications. An optional
 `maximum-rows` keeps long multiline content inside a cursor-following viewport

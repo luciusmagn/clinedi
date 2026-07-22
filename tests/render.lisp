@@ -126,7 +126,25 @@
   (let ((*presentation-enabled* nil))
     (check-equal "disabled presentation leaves text plain"
                  "plain"
-                 (ansi-colorize "plain" :red)))
+                 (ansi-colorize "plain" :red))
+    (check-equal "disabled presentation leaves reverse video plain"
+                 "plain"
+                 (clinedi:ansi-reverse-video "plain")))
+  (check-equal "basic coloring preserves its original wire format"
+               (format nil "~c[1;31mred~c[0m" (code-char 27) (code-char 27))
+               (ansi-colorize "red" :red :bold t))
+  (check-equal "unknown colors fall back to white"
+               (format nil "~c[37mplain~c[0m" (code-char 27) (code-char 27))
+               (ansi-colorize "plain" :orange))
+  (check-equal "indexed colors pass through the compatibility adapter"
+               (format nil "~c[38;5;114mgreen~c[0m"
+                       (code-char 27) (code-char 27))
+               (ansi-colorize
+                "green"
+                (cl-colorist:indexed-color 114 :fallback :green)))
+  (check-equal "reverse video preserves its original wire format"
+               (format nil "~c[7mplain~c[0m" (code-char 27) (code-char 27))
+               (clinedi:ansi-reverse-video "plain"))
   (check-equal "ANSI display width ignores styling"
                2
                (ansi-display-width (ansi-colorize "猫" :green)))
@@ -134,4 +152,7 @@
                "safe"
                (ansi-strip
                 (format nil "~c]0;title~csafe" (code-char 27) (code-char 7))))
+  (check-equal "ANSI strip removes C1 controls"
+               "safe"
+               (ansi-strip (format nil "~c31msafe" (code-char #x9b))))
   (values))
