@@ -77,6 +77,12 @@
                  :kill-word
                  (input-test--event
                   (input-test--escape-sequence (second case)))))
+  (dolist (case '(("CSI-u control-C event" "[99;5u")
+                  ("modify-other-keys control-C event" "[27;5;99~")))
+    (check-equal (first case)
+                 :interrupt
+                 (input-test--event
+                  (input-test--escape-sequence (second case)))))
   (check-equal "lone escape event"
                :escape
                (input-test--event (string (code-char 27))))
